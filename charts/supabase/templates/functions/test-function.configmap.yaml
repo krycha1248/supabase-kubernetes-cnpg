@@ -1,0 +1,11 @@
+{{- if and .Values.deployment.functions.enabled .Values.deployment.functions.testFunction.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "supabase.functions.fullname" . }}-test-hello
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+data:
+  index.ts: |
+    {{- .Files.Get "files/functions/test/hello.ts" | nindent 4 }}
+{{- end }}

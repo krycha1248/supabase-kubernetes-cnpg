@@ -59,6 +59,13 @@ CTX="kind-$CLUSTER"
 # Cluster reachability -----------------------------------------------------
 kubectl --context "$CTX" cluster-info >/dev/null
 
+# Worker count drives the default Functions replica count below. Falls back
+# to 1 for single-node (control-plane only) kind clusters created without
+# --workers — kind leaves the control-plane untainted, so pods still schedule.
+WORKER_NODES=$(kubectl --context "$CTX" get nodes \
+  -l '!node-role.kubernetes.io/control-plane' --no-headers 2>/dev/null | wc -l)
+(( WORKER_NODES < 1 )) && WORKER_NODES=1
+
 # Domain / EDGE ------------------------------------------------------------
 DOMAIN="${DOMAIN:-$RELEASE.supabase.local}"
 
@@ -88,6 +95,7 @@ echo "Release  : $RELEASE"
 echo "Chart    : $CHART_PATH"
 echo "Host     : $DOMAIN"
 echo "Edge     : $EDGE"
+echo "Workers  : $WORKER_NODES (used as Functions replicaCount)"
 $BACKUP && echo "Backup   : enabled (in-cluster MinIO)"
 
 # Namespace ---------------------------------------------------------------
@@ -96,6 +104,29 @@ kubectl --context "$CTX" create namespace "$RELEASE" --dry-run=client -o yaml \
 
 # Values layering ---------------------------------------------------------
 HELM_VALUES_ARGS=()
+
+# Single trap covers all generated values files dropped in /tmp.
+TMP_VALUES_FILES=()
+cleanup_tmp_values() { [[ ${#TMP_VALUES_FILES[@]} -gt 0 ]] && rm -f "${TMP_VALUES_FILES[@]}"; }
+trap cleanup_tmp_values EXIT
+
+# Test-deploy defaults: pin Functions to one replica per worker node and
+# disable HPA so the Deployment is a stable iteration target. Layered first
+# so user values files / --backup overrides take precedence.
+DEFAULTS_VALUES="/tmp/supabase-deploy-defaults_$$_$RANDOM.yaml"
+TMP_VALUES_FILES+=("$DEFAULTS_VALUES")
+cat >"$DEFAULTS_VALUES" <<EOF
+autoscaling:
+  functions:
+    enabled: false
+deployment:
+  functions:
+    replicaCount: ${WORKER_NODES}
+    testFunction:
+      enabled: true
+EOF
+HELM_VALUES_ARGS+=(-f "$DEFAULTS_VALUES")
+
 BASE_VALUES="$VALUES_DIR/$CHART.yaml"
 LOCAL_VALUES="$VALUES_DIR/$CHART.local.yaml"
 [[ -f "$BASE_VALUES"  ]] && HELM_VALUES_ARGS+=(-f "$BASE_VALUES")
@@ -118,8 +149,8 @@ CNPG_CLUSTER="supabase-db"
 BACKUP_BUCKET="supabase-backup"
 
 if $BACKUP; then
-  BACKUP_VALUES="$(mktemp -t supabase-backup-values.XXXXXX.yaml)"
-  trap 'rm -f "$BACKUP_VALUES"' EXIT
+  BACKUP_VALUES="/tmp/supabase-backup-values_$$_$RANDOM.yaml"
+  TMP_VALUES_FILES+=("$BACKUP_VALUES")
   cat >"$BACKUP_VALUES" <<EOF
 deployment:
   minio:
@@ -204,6 +235,14 @@ else
   echo
   echo "WARNING: could not read dashboard credentials from Secret '$dash_secret' in namespace '$RELEASE'." >&2
 fi
+
+cat <<EOF
+
+Edge Functions test fixture (deployment.functions.testFunction.enabled=true):
+  curl -sS -X POST http://$DOMAIN/functions/v1/hello \\
+    -H 'Content-Type: application/json' \\
+    -d '{"name":"world"}'
+EOF
 
 # --- Backup smoke test --------------------------------------------------
 # Pre-creates the bucket in the in-cluster MinIO (CNPG's barman-cloud plugin

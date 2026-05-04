@@ -68,6 +68,28 @@ Gateway API mode (alpha): pass `--mode gateway` to `cluster.sh create`; `helm-de
 
 Multi-node: with `--workers N`, kind creates `N` worker nodes labeled round-robin with `topology.kubernetes.io/zone=zone-{a,b,c}` and `topology.kubernetes.io/region=local`. This lets you verify `topologySpreadConstraints` on `zone` and CNPG `instances: N` across "zones" locally. Minimum `N=3` recommended to actually exercise zone spread.
 
+### Test-deploy defaults for Edge Functions
+
+`scripts/helm-deploy.sh` injects an internal values overlay before any user
+values files: it disables HPA for `functions`, pins `replicaCount` to the
+detected worker-node count (floor `1`), and turns on the `hello` test
+fixture (`deployment.functions.testFunction.enabled=true`) so you have a
+reachable function out of the box at `POST /functions/v1/hello`. This
+makes the Functions Deployment a stable iteration target while you tune
+`USER_WORKER_*` env vars. Override by adding `values/supabase.local.yaml`
+(later layers win):
+
+```yaml
+autoscaling:
+  functions:
+    enabled: true
+deployment:
+  functions:
+    replicaCount: 5
+    testFunction:
+      enabled: false
+```
+
 ## Chart configuration
 
 Full chart documentation is in [`charts/supabase/README.md`](./charts/supabase/README.md). Highlights:
@@ -80,6 +102,8 @@ Full chart documentation is in [`charts/supabase/README.md`](./charts/supabase/R
 - **Per-role DB secrets** — a second pre-install Job creates one `basic-auth` Secret per Postgres role (`postgres`, `authenticator`, `supabase_auth_admin`, …). CNPG and each service read only their own credential.
 - **Kong entrypoint** aligned with the upstream `supabase/supabase` `docker/volumes/api/kong-entrypoint.sh` — honors both legacy `anon`/`service_role` keys and the new asymmetric `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` pair.
 - **PodDisruptionBudgets** — opt-in per stateless service via `deployment.<svc>.podDisruptionBudget.enabled`. CNPG manages the Postgres PDB itself.
+- **HorizontalPodAutoscalers** — shipped for the ten stateless services (`analytics`, `auth`, `functions`, `imgproxy`, `kong`, `meta`, `realtime`, `rest`, `storage`, `vector`). Toggle per service via `autoscaling.<svc>.enabled`; when on, the Deployment drops its `replicas` field. `minio` and `studio` default to off.
+- **Edge Functions runtime tuning** — `USER_WORKER_MEMORY_LIMIT_MB`, `USER_WORKER_TIMEOUT_MS`, `USER_WORKER_NO_MODULE_CACHE` under `environment.functions` are read by `files/functions/index.ts` to tune `EdgeRuntime.userWorkers.create` without editing the shipped script.
 - **Gateway API (alpha)** — toggle with `gateway.enabled=true` + `ingress.enabled=false`.
 
 ## Database bootstrap

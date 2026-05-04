@@ -46,6 +46,21 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `environment.<svc>`. Primary use case: wiring GoTrue external OAuth
   providers (`GOTRUE_EXTERNAL_<PROVIDER>_CLIENT_ID` / `_SECRET`) via
   `secretKeyRef` without chart changes.
+- `HorizontalPodAutoscaler` resources for the ten stateless services
+  (analytics, auth, functions, imgproxy, kong, meta, realtime, rest, storage,
+  vector). Toggled per service via `autoscaling.<svc>.enabled` with
+  `minReplicas`, `maxReplicas`, `targetCPUUtilizationPercentage`, and an
+  optional `targetMemoryUtilizationPercentage`. When HPA is on, the
+  Deployment omits `replicas` so it does not fight the autoscaler.
+- `USER_WORKER_MEMORY_LIMIT_MB`, `USER_WORKER_TIMEOUT_MS`,
+  `USER_WORKER_NO_MODULE_CACHE` defaults under `environment.functions`,
+  consumed by `files/functions/index.ts` to tune `EdgeRuntime.userWorkers.create`
+  per-deployment without editing the shipped script.
+- `deployment.functions.testFunction.enabled` (default `false`) — mounts a
+  `hello` fixture function at `/home/deno/functions/hello/index.ts` from
+  `files/functions/test/hello.ts` via a ConfigMap subPath. Reachable at
+  `POST /functions/v1/hello {"name":"<x>"}`. `scripts/helm-deploy.sh` enables
+  it for local test deploys.
 
 ### Fixed
 
@@ -76,6 +91,17 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `tpl (.Files.Get …) .`. Pure refactor — rendered ConfigMap data is
   byte-identical. Pattern mirrors upstream
   [supabase-community/supabase-kubernetes@f331cb4](https://github.com/supabase-community/supabase-kubernetes/commit/f331cb4f2fdab234f966fdc3e882f8565a81ab58).
+- `image.functions.tag`: `v1.71.2` → `v1.74.0` (supabase/edge-runtime).
+- `image.studio.tag`: `2026.04.08-sha-205cbe7` → `2026.04.27-sha-5f60601`.
+- `autoscaling.minio.enabled` and `autoscaling.studio.enabled` now default
+  to `false`. MinIO is stateful (RWO PVC); Studio is a low-traffic admin UI.
+  Set them back to `true` if your environment justifies it.
+- `files/functions/index.ts` no longer hardcodes worker memory/timeout/
+  module-cache. The three knobs are read from env vars
+  (`USER_WORKER_MEMORY_LIMIT_MB`, `USER_WORKER_TIMEOUT_MS`,
+  `USER_WORKER_NO_MODULE_CACHE`) whose defaults live in
+  `values.yaml: environment.functions`. Override per environment via
+  `--set environment.functions.USER_WORKER_MEMORY_LIMIT_MB=512` etc.
 
 ### Migration
 

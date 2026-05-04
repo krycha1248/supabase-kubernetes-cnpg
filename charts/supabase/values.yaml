@@ -65,6 +65,9 @@ secret:
       serviceKey: serviceKey
       secret: secret
 
+  publishableKey:
+    existingSecret: null
+
     ## PostgreSQL credentials
     ##
     ## A pre-install Job generates one alphanumeric password per Postgres role
@@ -168,6 +171,11 @@ secret:
       user: user
       password: password
 
+  generator:
+    serviceAccount:
+      create: true
+      name: null
+
 deployment:
   ## `extraEnv` (per service, below) is a raw list of container env entries
   ## appended to the container's `env:`. Use it only for variables that need
@@ -264,6 +272,11 @@ deployment:
       enabled: false
       # minAvailable: 1
       # maxUnavailable: 1
+    ## Drop a 'hello' fixture function (POST /functions/v1/hello) into the
+    ## pod via ConfigMap subPath. Off by default; helm-deploy.sh enables it
+    ## for local test deploys. Source: files/functions/test/hello.ts.
+    testFunction:
+      enabled: false
 
   imgproxy:
     enabled: true
@@ -481,7 +494,7 @@ image:
   functions:
     repository: supabase/edge-runtime
     pullPolicy: IfNotPresent
-    tag: "v1.71.2"
+    tag: "v1.74.0"
     pullSecrets: []
 
   imgproxy:
@@ -529,7 +542,7 @@ image:
   studio:
     repository: supabase/studio
     pullPolicy: IfNotPresent
-    tag: "2026.04.08-sha-205cbe7"
+    tag: "2026.04.27-sha-5f60601"
     pullSecrets: []
 
   vector:
@@ -622,6 +635,10 @@ environment:
     ## SSL mode options: disable, allow, prefer, require, verify-ca, verify-full
     DB_SSL: disable
     VERIFY_JWT: false
+    ## Per-user-worker tuning consumed by files/functions/index.ts.
+    USER_WORKER_MEMORY_LIMIT_MB: "256"
+    USER_WORKER_TIMEOUT_MS: "400000"
+    USER_WORKER_NO_MODULE_CACHE: "false"
 
   imgproxy:
     IMGPROXY_BIND: ":5001"
@@ -922,7 +939,8 @@ autoscaling:
     # targetMemoryUtilizationPercentage: 80
 
   minio:
-    enabled: true
+    ## MinIO is a stateful service backed by RWO PVC — HPA is disabled by default.
+    enabled: false
     minReplicas: 1
     maxReplicas: 100
     targetCPUUtilizationPercentage: 80
@@ -950,7 +968,8 @@ autoscaling:
     # targetMemoryUtilizationPercentage: 80
 
   studio:
-    enabled: true
+    ## Studio is a low-traffic admin UI — HPA is disabled by default.
+    enabled: false
     minReplicas: 1
     maxReplicas: 100
     targetCPUUtilizationPercentage: 80

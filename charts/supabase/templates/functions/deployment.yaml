@@ -125,6 +125,11 @@ spec:
             - mountPath: /home/deno/functions/main/index.ts
               name: functions-main
               subPath: index.ts
+          {{- if .Values.deployment.functions.testFunction.enabled }}
+            - mountPath: /home/deno/functions/hello/index.ts
+              name: functions-test-hello
+              subPath: index.ts
+          {{- end }}
           {{- with .Values.deployment.functions.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -146,6 +151,11 @@ spec:
         - name: functions-main
           configMap:
             name: {{ include "supabase.functions.fullname" . }}-main
+        {{- if .Values.deployment.functions.testFunction.enabled }}
+        - name: functions-test-hello
+          configMap:
+            name: {{ include "supabase.functions.fullname" . }}-test-hello
+        {{- end }}
       {{- with .Values.deployment.functions.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

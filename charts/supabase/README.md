@@ -265,6 +265,64 @@ Full list of provider env vars (Apple, Azure, GitHub, GitLab, Keycloak, Slack, e
 
 Entries are appended verbatim; avoid re-declaring env names already set by the chart (DB_HOST, JWT secrets, etc.).
 
+### Edge Functions runtime tuning
+
+`files/functions/index.ts` (the user-worker bootstrap shipped as a ConfigMap)
+reads its three perf knobs from env vars instead of hardcoded constants. The
+defaults live under `environment.functions` so they can be overridden without
+editing the script:
+
+```yaml
+environment:
+  functions:
+    USER_WORKER_MEMORY_LIMIT_MB: "256"     # passed to EdgeRuntime.userWorkers.create
+    USER_WORKER_TIMEOUT_MS: "400000"        # per-request worker timeout
+    USER_WORKER_NO_MODULE_CACHE: "false"    # set "true" to disable Deno's module cache
+```
+
+Override per environment with `--set environment.functions.USER_WORKER_MEMORY_LIMIT_MB=512`
+or via your `values.yaml`. The script crashes the worker if any of these is
+missing — keep all three defined.
+
+#### `hello` test fixture
+
+Set `deployment.functions.testFunction.enabled: true` to mount a small
+`hello` function from `files/functions/test/hello.ts` into the Functions
+pod (via ConfigMap subPath at `/home/deno/functions/hello/index.ts`). It
+echoes `{"message":"Hello <name>!"}` for `POST /functions/v1/hello`.
+Off by default; `scripts/helm-deploy.sh` flips it on for local test deploys
+so you can smoke-test routing and `USER_WORKER_*` tunables end-to-end:
+
+```bash
+curl -sS -X POST http://supabase.supabase.local/functions/v1/hello \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"world"}'
+```
+
+## Horizontal Pod Autoscaling
+
+Ten stateless services ship a `HorizontalPodAutoscaler` (autoscaling/v2):
+`analytics`, `auth`, `functions`, `imgproxy`, `kong`, `meta`, `realtime`,
+`rest`, `storage`, `vector`. Each is toggled independently:
+
+```yaml
+autoscaling:
+  auth:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80   # optional, second metric
+```
+
+When `autoscaling.<svc>.enabled: true`, the corresponding Deployment omits
+its `replicas` field so it does not fight the HPA. Disable autoscaling and
+the Deployment falls back to `deployment.<svc>.replicaCount`.
+
+`minio` and `studio` ship with `autoscaling.<svc>.enabled: false` by
+default — MinIO is stateful (RWO PVC) and Studio is a low-traffic admin UI.
+Flip them to `true` only if your workload actually warrants it.
+
 ## How to use in Production
 
 Important points to consider:

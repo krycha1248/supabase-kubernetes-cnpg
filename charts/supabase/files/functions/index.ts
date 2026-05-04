@@ -66,9 +66,9 @@ if (!service_name || service_name === '') {
 const servicePath = `/home/deno/functions/${service_name}`
 console.error(`serving the request with ${servicePath}`)
 
-const memoryLimitMb = 150
-const workerTimeoutMs = 1 * 60 * 1000
-const noModuleCache = false
+const memoryLimitMb = parseInt(Deno.env.get('USER_WORKER_MEMORY_LIMIT_MB'))
+const workerTimeoutMs = parseInt(Deno.env.get('USER_WORKER_TIMEOUT_MS'))
+const noModuleCache = Deno.env.get('USER_WORKER_NO_MODULE_CACHE') === 'true'
 const importMapPath = null
 const envVarsObj = Deno.env.toObject()
 const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
