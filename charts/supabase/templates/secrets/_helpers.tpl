@@ -6,6 +6,21 @@ Expand the name of the JWT secret.
 {{- end -}}
 
 {{/*
+Expand the name of the publishable-key Secret. Split out so foundry (or any
+operator) can pre-seed the publishable key before chart install — it is the
+build-time VITE_SUPABASE_PUBLISHABLE_KEY value and must exist before the app
+image is built.
+*/}}
+{{- define "supabase.secret.publishableKey" -}}
+{{- $cfg := default (dict) .Values.secret.publishableKey -}}
+{{- if $cfg.existingSecret -}}
+{{- $cfg.existingSecret -}}
+{{- else -}}
+{{- printf "%s-publishable-key" (include "supabase.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Expand the name of the SMTP secret.
 */}}
 {{- define "supabase.secret.smtp" -}}
@@ -84,4 +99,18 @@ Expand the name of the bigquery secret.
 */}}
 {{- define "supabase.secret.bigquery" -}}
 {{- printf "%s-bigquery" (include "supabase.fullname" .) }}
+{{- end -}}
+
+{{/*
+ServiceAccount name used by the pre-install/pre-upgrade generator Jobs.
+Honors .Values.secret.generator.serviceAccount.name; falls back to
+"<fullname>-generator" rendered by templates/secrets/generator-rbac.yaml.
+*/}}
+{{- define "supabase.generator.serviceAccountName" -}}
+{{- $cfg := default (dict) (default (dict) .Values.secret.generator).serviceAccount -}}
+{{- if $cfg.name -}}
+{{- $cfg.name -}}
+{{- else -}}
+{{- printf "%s-generator" (include "supabase.fullname" .) -}}
+{{- end -}}
 {{- end -}}
