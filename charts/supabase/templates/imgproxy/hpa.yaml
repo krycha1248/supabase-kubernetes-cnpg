@@ -1,0 +1,32 @@
+{{- if and .Values.deployment.imgproxy.enabled .Values.autoscaling.imgproxy.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "supabase.imgproxy.fullname" . }}
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "supabase.imgproxy.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.imgproxy.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.imgproxy.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.imgproxy.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.imgproxy.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.imgproxy.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.imgproxy.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
