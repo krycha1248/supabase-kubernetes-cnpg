@@ -1,0 +1,59 @@
+{{- if .Values.deployment.rustfs.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supabase.rustfs.fullname" . }}-createbucket
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "supabase.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "supabase.rustfs.serviceAccountName" . }}
+      containers:
+        - name: createbucket
+          image: "{{ .Values.image.rustfs.rcRepository }}:{{ .Values.image.rustfs.rcTag }}"
+          imagePullPolicy: {{ .Values.image.rustfs.pullPolicy }}
+          env:
+            - name: RUSTFS_USER
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.user | default "user" }}
+                {{- else }}
+                  name: {{ include "supabase.secret.rustfs" . }}
+                  key: user
+                {{- end }}
+            - name: RUSTFS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.password | default "password" }}
+                {{- else }}
+                  name: {{ include "supabase.secret.rustfs" . }}
+                  key: password
+                {{- end }}
+            - name: GLOBAL_S3_BUCKET
+              value: {{ .Values.environment.storage.GLOBAL_S3_BUCKET | quote }}
+            - name: RUSTFS_ENDPOINT
+              value: http://{{ include "supabase.rustfs.fullname" . }}:{{ .Values.service.rustfs.port }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until rc alias set supa-rustfs "$RUSTFS_ENDPOINT" "$RUSTFS_USER" "$RUSTFS_PASSWORD"; do
+                echo "Waiting for rustfs at $RUSTFS_ENDPOINT..."
+                sleep 2
+              done
+              rc mb --ignore-existing "supa-rustfs/$GLOBAL_S3_BUCKET"
+{{- end }}

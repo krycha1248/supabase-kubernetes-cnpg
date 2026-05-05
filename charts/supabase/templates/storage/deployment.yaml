@@ -46,43 +46,6 @@ spec:
               sleep 2
               done
             - echo "Database is ready"
-        {{- if .Values.deployment.minio.enabled }}
-        - name: init-bucket
-          image: cgr.dev/chainguard/minio-client:latest-dev
-          env:
-            - name: MINIO_ROOT_USER
-              valueFrom:
-                secretKeyRef:
-                {{- if .Values.secret.minio.existingSecret }}
-                  name: {{ .Values.secret.minio.existingSecret }}
-                  key: {{ .Values.secret.minio.existingSecretKey.user | default "user" }}
-                {{- else }}
-                  name: {{ include "supabase.secret.minio" . }}
-                  key: user
-                {{- end }}
-            - name: MINIO_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                {{- if .Values.secret.s3.existingSecret }}
-                  name: {{ .Values.secret.s3.existingSecret }}
-                  key: {{ .Values.secret.s3.existingSecretKey.password | default "password" }}
-                {{- else }}
-                  name: {{ include "supabase.secret.minio" . }}
-                  key: password
-                {{- end }}
-            - name: GLOBAL_S3_BUCKET
-              value: {{ .Values.environment.storage.GLOBAL_S3_BUCKET }}
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -c
-            - |
-              until /usr/bin/mc alias set supa-minio http://{{ include "supabase.minio.fullname" . }}:{{ .Values.service.minio.port }} $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD; do
-                echo "Waiting for minio to start..."
-                sleep 2
-              done
-              /usr/bin/mc mb --ignore-existing supa-minio/$GLOBAL_S3_BUCKET
-        {{- end }}
       containers:
         - name: {{ include "supabase.storage.name" $ }}
           securityContext:
@@ -188,33 +151,33 @@ spec:
             {{- end }}
             
             - name: STORAGE_BACKEND
-              value: {{ if or .Values.deployment.minio.enabled .Values.environment.storage.GLOBAL_S3_ENDPOINT }}s3{{ else }}file{{ end }}
+              value: {{ if or .Values.deployment.rustfs.enabled .Values.environment.storage.GLOBAL_S3_ENDPOINT }}s3{{ else }}file{{ end }}
 
-            {{- if .Values.deployment.minio.enabled }}
+            {{- if .Values.deployment.rustfs.enabled }}
             - name: GLOBAL_S3_ENDPOINT
-              value: http://{{ include "supabase.minio.fullname" . }}:{{ default 9000 .Values.service.minio.port }}
-            - name: GLOBAL_S3_PROTOCOl
+              value: http://{{ include "supabase.rustfs.fullname" . }}:{{ default 9000 .Values.service.rustfs.port }}
+            - name: GLOBAL_S3_PROTOCOL
               value: http
             - name: GLOBAL_S3_FORCE_PATH_STYLE
               value: "true"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                {{- if .Values.secret.minio.existingSecret }}
-                  name: {{ .Values.secret.minio.existingSecret }}
-                  key: {{ .Values.secret.minio.existingSecretKey.user | default "user" }}
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.user | default "user" }}
                 {{- else }}
-                  name: {{ include "supabase.secret.minio" . }}
+                  name: {{ include "supabase.secret.rustfs" . }}
                   key: user
                 {{- end }}
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                {{- if .Values.secret.s3.existingSecret }}
-                  name: {{ .Values.secret.s3.existingSecret }}
-                  key: {{ .Values.secret.s3.existingSecretKey.password | default "password" }}
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.password | default "password" }}
                 {{- else }}
-                  name: {{ include "supabase.secret.minio" . }}
+                  name: {{ include "supabase.secret.rustfs" . }}
                   key: password
                 {{- end }}
             {{- else if .Values.environment.storage.GLOBAL_S3_ENDPOINT }}

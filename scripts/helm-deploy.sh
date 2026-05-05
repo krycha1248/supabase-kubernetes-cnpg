@@ -17,7 +17,7 @@ Required:
 
 Optional:
   --backup           Enable the Barman Cloud plugin, point backups at the
-                     in-cluster MinIO, pre-create the backup bucket, apply a
+                     in-cluster RustFS, pre-create the backup bucket, apply a
                      one-shot Backup CR, and wait for it to complete. Used to
                      smoke-test the backup wiring end-to-end on a kind cluster.
 
@@ -96,7 +96,7 @@ echo "Chart    : $CHART_PATH"
 echo "Host     : $DOMAIN"
 echo "Edge     : $EDGE"
 echo "Workers  : $WORKER_NODES (used as Functions replicaCount)"
-$BACKUP && echo "Backup   : enabled (in-cluster MinIO)"
+$BACKUP && echo "Backup   : enabled (in-cluster RustFS)"
 
 # Namespace ---------------------------------------------------------------
 kubectl --context "$CTX" create namespace "$RELEASE" --dry-run=client -o yaml \
@@ -116,9 +116,11 @@ TMP_VALUES_FILES=()
 cleanup_tmp_values() { [[ ${#TMP_VALUES_FILES[@]} -gt 0 ]] && rm -f "${TMP_VALUES_FILES[@]}"; }
 trap cleanup_tmp_values EXIT
 
-# Test-deploy defaults: pin Functions to one replica per worker node and
-# disable HPA so the Deployment is a stable iteration target. Layered first
-# so user values files / --backup overrides take precedence.
+# Test-deploy defaults: pin Functions to one replica per worker node, disable
+# HPA so the Deployment is a stable iteration target, and always enable the
+# in-cluster RustFS as the Storage API S3 backend (and as the destination for
+# the optional --backup smoke test below). Layered first so user values files
+# / --backup overrides take precedence.
 DEFAULTS_VALUES="/tmp/supabase-deploy-defaults_$$_$RANDOM.yaml"
 TMP_VALUES_FILES+=("$DEFAULTS_VALUES")
 cat >"$DEFAULTS_VALUES" <<EOF
@@ -131,6 +133,8 @@ deployment:
     extraConfigMaps:
       - name: ${HELLO_CM}
         mountPath: hello
+  rustfs:
+    enabled: true
 EOF
 HELM_VALUES_ARGS+=(-f "$DEFAULTS_VALUES")
 
@@ -139,7 +143,7 @@ LOCAL_VALUES="$VALUES_DIR/$CHART.local.yaml"
 [[ -f "$BASE_VALUES"  ]] && HELM_VALUES_ARGS+=(-f "$BASE_VALUES")
 [[ -f "$LOCAL_VALUES" ]] && HELM_VALUES_ARGS+=(-f "$LOCAL_VALUES")
 
-# --- Name helpers (mirror helm's supabase.fullname / supabase.minio.fullname).
+# --- Name helpers (mirror helm's supabase.fullname / supabase.rustfs.fullname).
 # For release names that already contain the chart name, helm collapses the
 # fullname to the release name — so for release=supabase the dashboard secret
 # is "supabase-dashboard", not "supabase-supabase-dashboard".
@@ -148,10 +152,10 @@ case "$RELEASE" in
   *)          FULLNAME="${RELEASE}-supabase" ;;
 esac
 case "$RELEASE" in
-  *supabase-minio*) MINIO_SVC="$RELEASE" ;;
-  *)                MINIO_SVC="${RELEASE}-supabase-minio" ;;
+  *supabase-rustfs*) RUSTFS_SVC="$RELEASE" ;;
+  *)                 RUSTFS_SVC="${RELEASE}-supabase-rustfs" ;;
 esac
-MINIO_SECRET="${FULLNAME}-minio"
+RUSTFS_SECRET="${FULLNAME}-rustfs"
 CNPG_CLUSTER="supabase-db"
 BACKUP_BUCKET="supabase-backup"
 
@@ -159,25 +163,19 @@ if $BACKUP; then
   BACKUP_VALUES="/tmp/supabase-backup-values_$$_$RANDOM.yaml"
   TMP_VALUES_FILES+=("$BACKUP_VALUES")
   cat >"$BACKUP_VALUES" <<EOF
-deployment:
-  minio:
-    enabled: true
-persistence:
-  minio:
-    enabled: true
 cnpg:
   backup:
     enabled: true
     objectStore:
       configuration:
         destinationPath: s3://${BACKUP_BUCKET}/
-        endpointURL: http://${MINIO_SVC}:9000
+        endpointURL: http://${RUSTFS_SVC}:9000
         s3Credentials:
           accessKeyId:
-            name: ${MINIO_SECRET}
+            name: ${RUSTFS_SECRET}
             key: user
           secretAccessKey:
-            name: ${MINIO_SECRET}
+            name: ${RUSTFS_SECRET}
             key: password
         wal:
           compression: gzip
@@ -252,42 +250,42 @@ Edge Functions test fixture (provisioned via extraConfigMaps[hello]):
 EOF
 
 # --- Backup smoke test --------------------------------------------------
-# Pre-creates the bucket in the in-cluster MinIO (CNPG's barman-cloud plugin
-# expects it to exist), then triggers an on-demand Backup CR and waits for
-# it to complete. The ScheduledBackup in values has immediate=true, but its
-# first Backup races with bucket creation — we don't rely on it. A single
+# Pre-creates the backup bucket in the in-cluster RustFS (CNPG's barman-cloud
+# plugin expects it to exist), then triggers an on-demand Backup CR and waits
+# for it to complete. The ScheduledBackup in values has immediate=true, but
+# its first Backup races with bucket creation — we don't rely on it. A single
 # explicit Backup CR gives a deterministic pass/fail signal.
 if $BACKUP; then
   echo
-  echo "Backup: bootstrapping MinIO bucket '$BACKUP_BUCKET'..."
+  echo "Backup: bootstrapping RustFS bucket '$BACKUP_BUCKET'..."
 
-  # Wait for MinIO Deployment to be Available — helm --wait already gates on
-  # this, but be explicit so failures are attributed correctly.
+  # Wait for the RustFS StatefulSet to be Ready — helm --wait already gates
+  # on this, but be explicit so failures are attributed correctly.
   kubectl --context "$CTX" -n "$RELEASE" rollout status \
-    "deployment/$MINIO_SVC" --timeout=120s
+    "statefulset/$RUSTFS_SVC" --timeout=120s
 
-  mc_user="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$MINIO_SECRET" \
+  rc_user="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$RUSTFS_SECRET" \
     -o jsonpath='{.data.user}' | base64 -d)"
-  mc_pass="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$MINIO_SECRET" \
+  rc_pass="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$RUSTFS_SECRET" \
     -o jsonpath='{.data.password}' | base64 -d)"
-  if [[ -z "$mc_user" || -z "$mc_pass" ]]; then
-    echo "ERROR: could not read MinIO credentials from secret '$MINIO_SECRET'." >&2
+  if [[ -z "$rc_user" || -z "$rc_pass" ]]; then
+    echo "ERROR: could not read RustFS credentials from secret '$RUSTFS_SECRET'." >&2
     exit 4
   fi
 
-  # Short-lived mc pod. --rm + --restart=Never + --attach gives us exit status.
+  # Short-lived rc pod. --rm + --restart=Never + --attach gives us exit status.
   kubectl --context "$CTX" -n "$RELEASE" run "supabase-backup-bucket-init" \
-    --image=minio/mc:latest \
+    --image=rustfs/rc:v0.1.13 \
     --restart=Never \
     --rm --attach --quiet \
-    --env="MC_ENDPOINT=http://${MINIO_SVC}:9000" \
-    --env="MC_USER=$mc_user" \
-    --env="MC_PASS=$mc_pass" \
-    --env="MC_BUCKET=$BACKUP_BUCKET" \
+    --env="RC_ENDPOINT=http://${RUSTFS_SVC}:9000" \
+    --env="RC_USER=$rc_user" \
+    --env="RC_PASS=$rc_pass" \
+    --env="RC_BUCKET=$BACKUP_BUCKET" \
     --command -- sh -c \
-      'mc alias set s3 "$MC_ENDPOINT" "$MC_USER" "$MC_PASS" >/dev/null \
-        && mc mb --ignore-existing "s3/$MC_BUCKET" \
-        && echo "bucket $MC_BUCKET ready"'
+      'rc alias set s3 "$RC_ENDPOINT" "$RC_USER" "$RC_PASS" >/dev/null \
+        && rc mb --ignore-existing "s3/$RC_BUCKET" \
+        && echo "bucket $RC_BUCKET ready"'
 
   echo
   echo "Backup: triggering smoke Backup CR and waiting for completion..."

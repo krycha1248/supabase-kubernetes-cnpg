@@ -18,7 +18,7 @@ SERVICE_MAP = {
     "imgproxy": "imgproxy",
     "kong": "kong",
     "meta": "meta",
-    "minio": "minio",
+    "rustfs": "rustfs",
     "realtime": "realtime",
     "rest": "rest",
     "storage": "storage",

@@ -89,10 +89,10 @@ Expand the name of the s3 secret.
 {{- end -}}
 
 {{/*
-Expand the name of the minio secret.
+Expand the name of the rustfs secret.
 */}}
-{{- define "supabase.secret.minio" -}}
-{{- printf "%s-minio" (include "supabase.fullname" .) }}
+{{- define "supabase.secret.rustfs" -}}
+{{- printf "%s-rustfs" (include "supabase.fullname" .) }}
 {{- end -}}
 
 {{/*

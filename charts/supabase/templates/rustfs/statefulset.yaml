@@ -1,0 +1,130 @@
+{{- if .Values.deployment.rustfs.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "supabase.rustfs.fullname" . }}
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "supabase.rustfs.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "supabase.rustfs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.deployment.rustfs.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "supabase.rustfs.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.image.rustfs.pullSecrets}}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "supabase.rustfs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.deployment.rustfs.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ include "supabase.rustfs.name" $ }}
+          securityContext:
+            {{- toYaml .Values.deployment.rustfs.securityContext | nindent 12 }}
+          image: "{{ .Values.image.rustfs.repository }}:{{ .Values.image.rustfs.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.rustfs.pullPolicy }}
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.user | default "user" }}
+                {{- else }}
+                  name: {{ include "supabase.secret.rustfs" . }}
+                  key: user
+                {{- end }}
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.secret.rustfs.existingSecret }}
+                  name: {{ .Values.secret.rustfs.existingSecret }}
+                  key: {{ .Values.secret.rustfs.existingSecretKey.password | default "password" }}
+                {{- else }}
+                  name: {{ include "supabase.secret.rustfs" . }}
+                  key: password
+                {{- end }}
+            - name: RUSTFS_CONSOLE_ADDRESS
+              value: "0.0.0.0:9001"
+            - name: RUSTFS_CORS_ALLOWED_ORIGINS
+              value: "*"
+            - name: RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS
+              value: "*"
+            {{- range $key, $value := .Values.environment.rustfs }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.deployment.rustfs.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.deployment.rustfs.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployment.rustfs.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+          {{- with .Values.deployment.rustfs.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+          {{- with .Values.deployment.rustfs.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - mountPath: /data
+              name: data
+      {{- with .Values.deployment.rustfs.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.rustfs.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.rustfs.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.rustfs.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.rustfs.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.persistence.rustfs.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.persistence.rustfs.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if .Values.persistence.storageClassName }}
+        storageClassName: {{ .Values.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.rustfs.size | quote }}
+{{- end }}

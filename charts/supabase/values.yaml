@@ -16,7 +16,7 @@
 ## - Logflare (Analytics)
 ## - Vector (Logs pipeline)
 ## - Imgproxy (Image transformation)
-## - MinIO (S3-compatible storage)
+## - RustFS (S3-compatible storage)
 ##
 ## This chart mirrors the official Supabase
 ## Docker setup, adapted for Kubernetes.
@@ -98,7 +98,7 @@ secret:
 
     ## All Secrets below are auto-generated on first install by the
     ## `credentials-generator` pre-install Job. Passwords/tokens are random
-    ## (openssl rand); non-password fields (username, OpenAI key, MinIO user)
+    ## (openssl rand); non-password fields (username, OpenAI key, RustFS user)
     ## accept optional inline overrides. Existing Secrets are never overwritten
     ## — delete the Secret to trigger regeneration.
     ##
@@ -163,8 +163,8 @@ secret:
     existingSecretKey:
       cryptoKey: cryptoKey
 
-    ## MinIO root credentials. `user` defaults to "supa-storage", `password` is random.
-  minio:
+    ## RustFS root credentials. `user` defaults to "supa-storage", `password` is random.
+  rustfs:
     # user: "supa-storage"
     existingSecret: null
     existingSecretKey:
@@ -342,7 +342,7 @@ deployment:
       # minAvailable: 1
       # maxUnavailable: 1
 
-  minio:
+  rustfs:
     enabled: false
     replicaCount: 1
     nameOverride: ""
@@ -510,11 +510,13 @@ image:
     tag: "v0.96.3"
     pullSecrets: []
 
-  minio:
-    repository: cgr.dev/chainguard/minio
+  rustfs:
+    repository: rustfs/rustfs
     pullPolicy: IfNotPresent
-    tag: "latest"
+    tag: "1.0.0-beta.1"
     pullSecrets: []
+    rcRepository: rustfs/rc
+    rcTag: "v0.1.13"
 
   realtime:
     repository: supabase/realtime
@@ -665,7 +667,7 @@ environment:
     DB_SSL: disable
     PG_META_PORT: "8080"
 
-  minio: {}
+  rustfs: {}
 
   realtime:
     DB_USER: supabase_admin
@@ -724,11 +726,16 @@ environment:
   vector: {}
 
 ## StorageClass is chart-wide. Two top-level knobs:
-##   - storageClassName:       block (RWO) volumes — CNPG + imgproxy/minio/storage/deno
-##   - storageClassNameShared: shared (RWX) volumes — functions, snippets
-##                             (Studio↔Functions mount). On cloud providers with
-##                             RWO-only block storage, set this to an RWX class
-##                             (e.g. azurefile-csi, efs) to avoid Multi-Attach.
+##   - storageClassName:       block (RWO) volumes — CNPG + rustfs
+##   - storageClassNameShared: shared (RWX) volumes — snippets, imgproxy
+##                             (Studio↔Functions snippet mount; imgproxy reads
+##                             files written by storage-api in file backend
+##                             mode). The default chart values request RWO so
+##                             they work on RWO-only storage; switch the
+##                             relevant `persistence.<name>.accessModes` to
+##                             ReadWriteMany and point this knob at an RWX
+##                             class (e.g. azurefile-csi, efs) when you scale
+##                             those workloads beyond a single replica.
 ## "" on either = cluster default.
 persistence:
   storageClassName: ""
@@ -739,12 +746,14 @@ persistence:
     # existingClaim: ""
     annotations: {}
     size: 1Gi
+    ## Default RWO is compatible with any StorageClass (local-path, etc.).
+    ## For multi-replica imgproxy on a shared volume backed by storage-api in
+    ## file backend mode, set this to ReadWriteMany and ensure
+    ## persistence.storageClassNameShared points to an RWX-capable class.
     accessModes:
       - ReadWriteOnce
 
-  minio:
-    enabled: true
-    # existingClaim: ""
+  rustfs:
     annotations: {}
     size: 1Gi
     accessModes:
@@ -822,7 +831,7 @@ service:
     labels: {}
     portName: http
 
-  minio:
+  rustfs:
     type: ClusterIP
     port: 9000
     targetPort: 9000
@@ -914,14 +923,6 @@ autoscaling:
 
   meta:
     enabled: true
-    minReplicas: 1
-    maxReplicas: 100
-    targetCPUUtilizationPercentage: 80
-    # targetMemoryUtilizationPercentage: 80
-
-  minio:
-    ## MinIO is a stateful service backed by RWO PVC — HPA is disabled by default.
-    enabled: false
     minReplicas: 1
     maxReplicas: 100
     targetCPUUtilizationPercentage: 80
@@ -1019,7 +1020,7 @@ serviceAccount:
   imgproxy: {}
   kong: {}
   meta: {}
-  minio: {}
+  rustfs: {}
   realtime: {}
   rest: {}
   storage: {}
@@ -1172,17 +1173,17 @@ cnpg:
       ## Pass-through to ObjectStore.spec.configuration. Required when
       ## existingName is empty — the chart does not invent a destination.
       ##
-      ## Example — in-cluster bundled MinIO (see `minio:` section):
+      ## Example — in-cluster bundled RustFS (see `rustfs:` section):
       ## configuration:
       ##   destinationPath: s3://supabase-backup/
-      ##   endpointURL: http://supabase-minio:9000
+      ##   endpointURL: http://supabase-rustfs:9000
       ##   s3Credentials:
       ##     accessKeyId:
-      ##       name: supabase-minio
-      ##       key: rootUser
+      ##       name: supabase-rustfs
+      ##       key: user
       ##     secretAccessKey:
-      ##       name: supabase-minio
-      ##       key: rootPassword
+      ##       name: supabase-rustfs
+      ##       key: password
       ##   wal:
       ##     compression: gzip
       ##   data:

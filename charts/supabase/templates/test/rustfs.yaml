@@ -1,8 +1,8 @@
-{{- if .Values.deployment.minio.enabled -}}
+{{- if .Values.deployment.rustfs.enabled -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "supabase.fullname" . }}-test-minio
+  name: {{ include "supabase.fullname" . }}-test-rustfs
   labels:
     {{- include "supabase.labels" . | nindent 4 }}
   annotations:
@@ -12,14 +12,15 @@ spec:
   template:
     spec:
       containers:
-        - name: test-minio
+        - name: test-rustfs
           image: curlimages/curl:8.20.0
+          imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -c
             - |
               curl -sfo /dev/null \
-                http://{{ include "supabase.minio.fullname" . }}:{{ .Values.service.minio.port }}/minio/health/live
-              echo "Sevice {{ include "supabase.minio.fullname" . }} is healthy."
+                http://{{ include "supabase.rustfs.fullname" . }}:{{ .Values.service.rustfs.port }}/health
+              echo "Sevice {{ include "supabase.rustfs.fullname" . }} is healthy."
       restartPolicy: Never
 {{- end }}

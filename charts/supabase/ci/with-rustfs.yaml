@@ -21,15 +21,16 @@ secret:
   meta:
     cryptoKey: "your-super-secret-and-long-crypto-key"
 
+deployment:
+  rustfs:
+    enabled: true
+
 persistence:
   db:
     enabled: false
-
   imgproxy:
     enabled: false
-
   snippets:
     enabled: false
-
   storage:
     enabled: false
