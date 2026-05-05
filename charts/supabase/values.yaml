@@ -272,11 +272,7 @@ deployment:
       enabled: false
       # minAvailable: 1
       # maxUnavailable: 1
-    ## Drop a 'hello' fixture function (POST /functions/v1/hello) into the
-    ## pod via ConfigMap subPath. Off by default; helm-deploy.sh enables it
-    ## for local test deploys. Source: files/functions/test/hello.ts.
-    testFunction:
-      enabled: false
+    extraConfigMaps: []
 
   imgproxy:
     enabled: true
@@ -738,14 +734,6 @@ persistence:
   storageClassName: ""
   storageClassNameShared: ""
 
-  functions:
-    enabled: true
-    # existingClaim: ""
-    annotations: {}
-    size: 1Gi
-    accessModes:
-      - ReadWriteOnce
-
   imgproxy:
     enabled: true
     # existingClaim: ""
@@ -778,13 +766,6 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-  deno:
-    enabled: true
-    # existingClaim: ""
-    annotations: {}
-    size: 1Gi
-    accessModes:
-      - ReadWriteOnce
 
 service:
   analytics:

@@ -5,6 +5,78 @@ All notable changes to this chart are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- **Edge Functions delivery is now ConfigMap-only.** The
+  `persistence.functions` PVC (RWO, 1 Gi, enabled by default) was a no-op —
+  nothing in the chart wrote to it, and its RWO lock silently blocked the
+  HPA from scaling Functions past one replica. The block is removed
+  entirely. Users with `existingClaim` overrides must migrate their
+  functions into ConfigMaps; see README "Custom edge functions".
+- **Deno module cache is now `emptyDir`.** `persistence.deno` PVC removed.
+  The cache lives for the pod lifetime and does not survive restarts;
+  cold starts re-fetch modules. Acceptable for typical workloads. Heavy
+  import graphs should `deno vendor`.
+- **`deployment.functions.testFunction.enabled` removed.** The hello
+  fixture is now provisioned automatically by the chart as a helm-test
+  artefact (see *Added* below) and gated by the presence of a
+  `mountPath: hello` entry in `extraConfigMaps`. No explicit toggle.
+- **Studio's edge-function browser now reads `deployment.functions.extraConfigMaps`.**
+  Previously gated by `persistence.functions.enabled`, it now mounts each
+  declared file from `extraConfigMaps` read-only into the Studio pod and
+  surfaces `EDGE_FUNCTIONS_MANAGEMENT_FOLDER` only when at least one
+  entry is set. No user action required if `extraConfigMaps` is in use;
+  otherwise the Studio UI no longer claims to manage edge functions.
+
+### Added
+
+- `deployment.functions.extraConfigMaps` — list of out-of-band ConfigMaps
+  surfaced as plain files under `/home/deno/functions/<mountPath>/`.
+  Schema: `{name: <configmap-name>, mountPath: <relative-dir>, files:
+  [<key>, ...]}`. `files` defaults to `[index.ts]`; multi-file functions
+  must list every key explicitly. Each declared file is mounted via
+  `subPath` so edge-runtime sees real files instead of the symlinks a
+  directory-style ConfigMap mount would expose (the bundler in
+  `/var/tmp/sb-compile-edge-runtime/` cannot follow them). Volume name
+  is `fn-<configmap-name>` (≤ 60 chars to stay under Kubernetes' 63-char
+  volume name cap). Studio dispatches the same list (`readOnly: true`)
+  so the dashboard can list deployed functions.
+- `templates/test/functions-fixture.configmap.yaml` — chart-managed
+  fixture ConfigMap (`{{ .Chart.Name }}-test-hello`) sourced from
+  `files/test/hello.ts`. Rendered only when `extraConfigMaps` includes a
+  `mountPath: hello` entry referencing it.
+- `templates/test/functions.yaml` — `helm test` hook that POSTs to
+  `/functions/v1/hello` and asserts the response body. Same gating as
+  the fixture ConfigMap; runs automatically on `helm test` (and through
+  `ct install`) whenever the fixture is wired up.
+- `charts/supabase/ci/with-extra-functions.yaml` — second CI values file
+  that activates the fixture so chart-testing exercises the
+  `extraConfigMaps` flow end-to-end (the existing `ci/example.yaml`
+  continues to cover the no-extras path).
+
+### Changed
+
+- `helm-deploy.sh` provisions the test fixture from
+  `charts/supabase/files/test/hello.ts` (the chart-owned source of
+  truth) instead of an external fixtures directory. The script's
+  defaults values block uses `extraConfigMaps` directly — no special-
+  case toggle.
+- All `templates/test/*.yaml` jobs migrated from the third-party
+  `kdevup/curljq` image to the official `curlimages/curl:8.20.0`
+  (pinned). Shell switched from `/bin/bash` to `/bin/sh` (POSIX,
+  available in the alpine-based curl image). No `jq` dependency — the
+  one new test (`functions.yaml`) asserts the response body with `grep`.
+
+### Removed
+
+- `templates/functions/test-function.configmap.yaml` (replaced by
+  `templates/test/functions-fixture.configmap.yaml`).
+- PVC entries for `functions` and `deno` in `templates/persistence.yaml`
+  and the corresponding `persistence.functions` / `persistence.deno`
+  blocks in `values.yaml`.
+
 ## [0.7.0]
 
 ### Breaking

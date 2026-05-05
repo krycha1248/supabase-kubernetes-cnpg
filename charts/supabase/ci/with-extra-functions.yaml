@@ -24,15 +24,17 @@ secret:
 persistence:
   db:
     enabled: false
-
   imgproxy:
     enabled: false
-
   minio:
     enabled: false
-
   snippets:
     enabled: false
-
   storage:
     enabled: false
+
+deployment:
+  functions:
+    extraConfigMaps:
+      - name: supabase-test-hello
+        mountPath: hello

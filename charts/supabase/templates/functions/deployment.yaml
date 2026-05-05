@@ -114,21 +114,17 @@ spec:
           {{- with .Values.deployment.functions.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.persistence.functions.enabled }}
-            - name: functions-storage
-              mountPath: /home/deno/functions
-          {{- end }}
-          {{- if .Values.persistence.deno.enabled }}
             - name: deno-cache
               mountPath: /root/.cache/deno
-          {{- end }}
             - mountPath: /home/deno/functions/main/index.ts
               name: functions-main
               subPath: index.ts
-          {{- if .Values.deployment.functions.testFunction.enabled }}
-            - mountPath: /home/deno/functions/hello/index.ts
-              name: functions-test-hello
-              subPath: index.ts
+          {{- range $cm := .Values.deployment.functions.extraConfigMaps }}
+          {{- range $file := default (list "index.ts") $cm.files }}
+            - name: fn-{{ $cm.name }}
+              mountPath: /home/deno/functions/{{ $cm.mountPath }}/{{ $file }}
+              subPath: {{ $file }}
+          {{- end }}
           {{- end }}
           {{- with .Values.deployment.functions.resources }}
           resources:
@@ -138,23 +134,15 @@ spec:
         {{- with .Values.deployment.functions.volumes }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- if .Values.persistence.functions.enabled }}
-        - name: functions-storage
-          persistentVolumeClaim:
-            claimName: {{ include "supabase.pvc.name" (dict "root" $ "name" "functions") }}
-        {{- end }}
-        {{- if .Values.persistence.deno.enabled }}
         - name: deno-cache
-          persistentVolumeClaim:
-            claimName: {{ include "supabase.pvc.name" (dict "root" $ "name" "deno") }}
-        {{- end }}
+          emptyDir: {}
         - name: functions-main
           configMap:
             name: {{ include "supabase.functions.fullname" . }}-main
-        {{- if .Values.deployment.functions.testFunction.enabled }}
-        - name: functions-test-hello
+        {{- range .Values.deployment.functions.extraConfigMaps }}
+        - name: fn-{{ .name }}
           configMap:
-            name: {{ include "supabase.functions.fullname" . }}-test-hello
+            name: {{ .name }}
         {{- end }}
       {{- with .Values.deployment.functions.nodeSelector }}
       nodeSelector:

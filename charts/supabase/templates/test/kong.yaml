@@ -34,10 +34,10 @@ spec:
                   key: password
                   {{- end }}
           name: test-kong
-          image: kdevup/curljq
+          image: curlimages/curl:8.20.0
           imagePullPolicy: IfNotPresent
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
               echo "Attempting to access dashboard with provided credentials..."

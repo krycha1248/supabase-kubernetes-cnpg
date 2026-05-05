@@ -13,10 +13,10 @@ spec:
     spec:
       containers:
         - name: test-realtime
-          image: kdevup/curljq
+          image: curlimages/curl:8.20.0
           imagePullPolicy: IfNotPresent
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
               curl -sfo /dev/null \

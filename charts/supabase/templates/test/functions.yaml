@@ -1,0 +1,36 @@
+{{- $hasHello := false -}}
+{{- range .Values.deployment.functions.extraConfigMaps -}}
+  {{- if eq .mountPath "hello" -}}{{- $hasHello = true -}}{{- end -}}
+{{- end -}}
+{{- if and .Values.deployment.functions.enabled $hasHello -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supabase.fullname" . }}-test-functions
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      containers:
+        - name: test-functions
+          image: curlimages/curl:8.20.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              URL="http://{{ include "supabase.functions.fullname" . }}:{{ .Values.service.functions.port }}/hello"
+              RESPONSE="$(curl -sSf -X POST "$URL" \
+                -H 'Content-Type: application/json' \
+                -d '{"name":"world"}')"
+              echo "Response: $RESPONSE"
+              echo "$RESPONSE" | grep -q '"Hello world!"' \
+                || ( echo "Functions hello fixture returned unexpected response" && exit 1 )
+              echo "Service {{ include "supabase.functions.fullname" . }} is healthy."
+      restartPolicy: Never
+{{- end }}

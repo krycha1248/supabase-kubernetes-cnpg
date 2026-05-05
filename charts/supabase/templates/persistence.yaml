@@ -1,5 +1,3 @@
-{{ include "supabase.pvc" (dict "root" $ "name" "functions" "enabled" .Values.deployment.functions.enabled "shared" true) }}
----
 {{ include "supabase.pvc" (dict "root" $ "name" "imgproxy" "enabled" .Values.deployment.imgproxy.enabled "shared" true) }}
 ---
 {{ include "supabase.pvc" (dict "root" $ "name" "minio" "enabled" .Values.deployment.minio.enabled "shared" false) }}
@@ -7,5 +5,3 @@
 {{ include "supabase.pvc" (dict "root" $ "name" "snippets" "enabled" .Values.deployment.studio.enabled "shared" true) }}
 ---
 {{ include "supabase.pvc" (dict "root" $ "name" "storage" "enabled" .Values.deployment.storage.enabled "shared" false) }}
----
-{{ include "supabase.pvc" (dict "root" $ "name" "deno" "enabled" .Values.deployment.functions.enabled "shared" true) }}

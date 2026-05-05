@@ -13,9 +13,9 @@ spec:
     spec:
       containers:
         - name: test-minio
-          image: kdevup/curljq
+          image: curlimages/curl:8.20.0
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
               curl -sfo /dev/null \

@@ -284,14 +284,90 @@ Override per environment with `--set environment.functions.USER_WORKER_MEMORY_LI
 or via your `values.yaml`. The script crashes the worker if any of these is
 missing — keep all three defined.
 
+#### Custom edge functions
+
+User functions are delivered via ConfigMaps the user creates out-of-band
+(kustomize, GitOps, separate chart, or `kubectl create configmap`). Each
+entry in `deployment.functions.extraConfigMaps` declares a ConfigMap and
+the files inside it; the chart mounts each declared file as a subPath
+under `/home/deno/functions/<mountPath>/<file>`. Studio dispatches the
+same list (read-only) so the dashboard can list deployed functions.
+
+```yaml
+deployment:
+  functions:
+    extraConfigMaps:
+      # Single-file function (default — files: [index.ts])
+      - name: edge-fn-orders
+        mountPath: orders             # → /home/deno/functions/orders/index.ts
+
+      # Multi-file function — list every ConfigMap key you want mounted
+      - name: edge-fn-billing
+        mountPath: billing            # → /home/deno/functions/billing/{index,helpers,deps}.ts
+        files:
+          - index.ts
+          - helpers.ts
+          - deps.ts
+
+      # Shared helpers — directory layout matches the official Supabase CLI
+      - name: edge-fn-shared
+        mountPath: _shared            # imported from a function as ../_shared/<file>.ts
+        files:
+          - cors.ts
+          - auth.ts
+```
+
+Author functions with the same layout `supabase functions deploy` produces:
+`<func>/index.ts` plus optional sibling files (`helpers.ts`, `deps.ts`).
+Shared helpers live in their own ConfigMap mounted as `_shared` and are
+imported as `../_shared/<file>.ts`.
+
+Provision a function ConfigMap from a directory of files:
+
+```bash
+kubectl -n supabase create configmap edge-fn-orders \
+  --from-file=path/to/orders/
+```
+
+Constraints:
+
+- ConfigMap data keys are flat — Kubernetes does not allow `/` in keys, so
+  no nested directories inside a single ConfigMap. Use multiple ConfigMaps
+  to model a tree.
+- ConfigMap size limit is 1 MiB (etcd). Sufficient for a typical function
+  with helpers; heavier payloads should `deno vendor` and ship a custom
+  edge-runtime image.
+- ConfigMap name must be ≤ 60 chars: the chart prefixes the volume name
+  with `fn-` (avoids collisions with the built-in `functions-main` and
+  `deno-cache` volumes), and Kubernetes caps volume names at 63 chars.
+- `files:` must list every key you want exposed to the runtime. Default is
+  `[index.ts]`. Keys present in the ConfigMap but absent from `files:` are
+  not mounted. Files listed in `files:` but missing from the ConfigMap
+  fail the pod with a `MountVolume.SetUp failed` error — fix by adding
+  the key to the ConfigMap or removing it from `files:`.
+
+Why subPath mounts: edge-runtime bundles each function into
+`/var/tmp/sb-compile-edge-runtime/<name>/` at boot and copies the source
+files there without resolving symlinks. A directory-style ConfigMap mount
+exposes files as symlinks (`index.ts → ..data/index.ts`), so the bundler
+ends up with broken references. Per-file subPath mounts deliver the
+ConfigMap content as plain files instead.
+
+Restart semantics: changing the `extraConfigMaps` list rolls the Functions
+and Studio Deployments automatically (Pod spec changes). Editing a
+referenced ConfigMap **in place** does *not* propagate, because subPath
+mounts are not hot-synced by kubelet. Run
+`kubectl rollout restart deploy/<release>-supabase-functions` (and Studio,
+if affected) to pick up in-place ConfigMap edits.
+
 #### `hello` test fixture
 
-Set `deployment.functions.testFunction.enabled: true` to mount a small
-`hello` function from `files/functions/test/hello.ts` into the Functions
-pod (via ConfigMap subPath at `/home/deno/functions/hello/index.ts`). It
-echoes `{"message":"Hello <name>!"}` for `POST /functions/v1/hello`.
-Off by default; `scripts/helm-deploy.sh` flips it on for local test deploys
-so you can smoke-test routing and `USER_WORKER_*` tunables end-to-end:
+`scripts/helm-deploy.sh` provisions a small `hello` function ad-hoc as part
+of every local test deploy. It creates a ConfigMap named
+`<release>-test-hello` from `scripts/fixtures/hello.ts` and references it
+via `deployment.functions.extraConfigMaps[].mountPath: hello`, exercising
+the same delivery path real users follow. The function echoes
+`{"message":"Hello <name>!"}` for `POST /functions/v1/hello`:
 
 ```bash
 curl -sS -X POST http://supabase.supabase.local/functions/v1/hello \

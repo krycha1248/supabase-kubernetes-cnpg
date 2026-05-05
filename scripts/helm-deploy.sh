@@ -102,6 +102,12 @@ $BACKUP && echo "Backup   : enabled (in-cluster MinIO)"
 kubectl --context "$CTX" create namespace "$RELEASE" --dry-run=client -o yaml \
   | kubectl --context "$CTX" apply -f -
 
+# Test fixture -------------------------------------------------------------
+HELLO_CM="${RELEASE}-test-hello"
+kubectl --context "$CTX" -n "$RELEASE" create configmap "$HELLO_CM" \
+  --from-file=index.ts="$CHART_PATH/files/test/hello.ts" \
+  --dry-run=client -o yaml | kubectl --context "$CTX" apply -f -
+
 # Values layering ---------------------------------------------------------
 HELM_VALUES_ARGS=()
 
@@ -122,8 +128,9 @@ autoscaling:
 deployment:
   functions:
     replicaCount: ${WORKER_NODES}
-    testFunction:
-      enabled: true
+    extraConfigMaps:
+      - name: ${HELLO_CM}
+        mountPath: hello
 EOF
 HELM_VALUES_ARGS+=(-f "$DEFAULTS_VALUES")
 
@@ -238,7 +245,7 @@ fi
 
 cat <<EOF
 
-Edge Functions test fixture (deployment.functions.testFunction.enabled=true):
+Edge Functions test fixture (provisioned via extraConfigMaps[hello]):
   curl -sS -X POST http://$DOMAIN/functions/v1/hello \\
     -H 'Content-Type: application/json' \\
     -d '{"name":"world"}'

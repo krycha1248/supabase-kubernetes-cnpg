@@ -1,0 +1,15 @@
+{{- $hasHello := false -}}
+{{- range .Values.deployment.functions.extraConfigMaps -}}
+  {{- if eq .mountPath "hello" -}}{{- $hasHello = true -}}{{- end -}}
+{{- end -}}
+{{- if and .Values.deployment.functions.enabled $hasHello -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-test-hello
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+data:
+  index.ts: |
+    {{- .Files.Get "files/test/hello.ts" | nindent 4 }}
+{{- end }}

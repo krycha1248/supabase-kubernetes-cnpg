@@ -146,7 +146,7 @@ spec:
                   key: privateAccessToken
                   {{- end }}
             {{- end }}
-            {{- if .Values.persistence.functions.enabled }}
+            {{- if .Values.deployment.functions.extraConfigMaps }}
             - name: EDGE_FUNCTIONS_MANAGEMENT_FOLDER
               value: /home/deno/functions
             {{- end }}
@@ -173,29 +173,33 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.deployment.studio.volumeMounts .Values.persistence.functions.enabled }}
+          {{- if or .Values.deployment.studio.volumeMounts .Values.deployment.functions.extraConfigMaps .Values.persistence.snippets.enabled }}
           volumeMounts:
             {{- with .Values.deployment.studio.volumeMounts }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- if .Values.persistence.functions.enabled }}
-            - name: functions-storage
-              mountPath: /home/deno/functions
+            {{- range $cm := .Values.deployment.functions.extraConfigMaps }}
+            {{- range $file := default (list "index.ts") $cm.files }}
+            - name: fn-{{ $cm.name }}
+              mountPath: /home/deno/functions/{{ $cm.mountPath }}/{{ $file }}
+              subPath: {{ $file }}
+              readOnly: true
+            {{- end }}
             {{- end }}
             {{- if .Values.persistence.snippets.enabled }}
             - name: snippets-storage
               mountPath: /app/snippets
             {{- end }}
           {{- end }}
-      {{- if or .Values.deployment.studio.volumes .Values.persistence.functions.enabled }}
+      {{- if or .Values.deployment.studio.volumes .Values.deployment.functions.extraConfigMaps .Values.persistence.snippets.enabled }}
       volumes:
         {{- with .Values.deployment.studio.volumes }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- if .Values.persistence.functions.enabled }}
-        - name: functions-storage
-          persistentVolumeClaim:
-            claimName: {{ include "supabase.pvc.name" (dict "root" $ "name" "functions") }}
+        {{- range .Values.deployment.functions.extraConfigMaps }}
+        - name: fn-{{ .name }}
+          configMap:
+            name: {{ .name }}
         {{- end }}
         {{- if .Values.persistence.snippets.enabled }}
         - name: snippets-storage
