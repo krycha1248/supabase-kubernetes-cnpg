@@ -52,6 +52,8 @@ spec:
             - name: SUPABASE_URL
               value: http://{{ include "supabase.kong.fullname" . }}:{{ .Values.service.kong.port }}
             {{- end }}
+            - name: SUPABASE_PUBLIC_URL
+              value: {{ .Values.environment.auth.API_EXTERNAL_URL | quote }}
 
             - name: DB_HOSTNAME
               value: {{ include "supabase.db.fullname" . }}
@@ -97,6 +99,20 @@ spec:
                   name: {{ include "supabase.secret.jwt" . }}
                   key: serviceKey
                   {{- end }}
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "supabase.secret.publishableKey" . }}
+                  key: publishableKey
+            - name: SUPABASE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "supabase.secret.jwt" . }}
+                  key: secretKey
+            - name: SUPABASE_PUBLISHABLE_KEYS
+              value: '{"default":"$(SUPABASE_PUBLISHABLE_KEY)"}'
+            - name: SUPABASE_SECRET_KEYS
+              value: '{"default":"$(SUPABASE_SECRET_KEY)"}'
             - name: SUPABASE_DB_URL
               value: $(DB_DRIVER)://$(DB_USERNAME):$(DB_PASSWORD_ENC)@$(DB_HOSTNAME):$(DB_PORT)/$(DB_DATABASE)?search_path=auth&sslmode=$(DB_SSL)
             - name: __HEALTH_TOKEN__

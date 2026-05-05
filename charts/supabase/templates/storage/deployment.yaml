@@ -124,6 +124,18 @@ spec:
                   name: {{ include "supabase.secret.jwt" . }}
                   key: secret
                   {{- end }}
+            - name: AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.secret.jwt.existingSecret }}
+                  name: {{ .Values.secret.jwt.existingSecret }}
+                  key: {{ .Values.secret.jwt.existingSecretKey.secret | default "secret" }}
+                  {{- else }}
+                  name: {{ include "supabase.secret.jwt" . }}
+                  key: secret
+                  {{- end }}
+            - name: STORAGE_PUBLIC_URL
+              value: {{ .Values.environment.auth.API_EXTERNAL_URL | quote }}
             # JWKS (EC public + legacy symmetric) for asymmetric token verification.
             - name: JWT_JWKS
               valueFrom:
