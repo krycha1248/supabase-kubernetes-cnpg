@@ -4,6 +4,7 @@ console.log('main function started')
 
 const JWT_SECRET = Deno.env.get('JWT_SECRET')
 const VERIFY_JWT = Deno.env.get('VERIFY_JWT') === 'true'
+const HEALTH_TOKEN = Deno.env.get('__HEALTH_TOKEN__')
 
 function getAuthToken(req: Request) {
 const authHeader = req.headers.get('authorization')
@@ -30,6 +31,22 @@ return true
 }
 
 Deno.serve(async (req: Request) => {
+const url = new URL(req.url)
+const { pathname } = url
+
+if (pathname === '/_internal/health') {
+    if (!HEALTH_TOKEN || req.headers.get('x-health-token') !== HEALTH_TOKEN) {
+    return new Response(JSON.stringify({ msg: 'forbidden' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+    })
+    }
+    return new Response(JSON.stringify({ message: 'ok' }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    })
+}
+
 if (req.method !== 'OPTIONS' && VERIFY_JWT) {
     try {
     const token = getAuthToken(req)
@@ -50,8 +67,6 @@ if (req.method !== 'OPTIONS' && VERIFY_JWT) {
     }
 }
 
-const url = new URL(req.url)
-const { pathname } = url
 const path_parts = pathname.split('/')
 const service_name = path_parts[1]
 

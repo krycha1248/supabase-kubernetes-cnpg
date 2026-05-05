@@ -171,6 +171,7 @@ secret:
       user: user
       password: password
 
+
   generator:
     serviceAccount:
       create: true
@@ -255,8 +256,6 @@ deployment:
     replicaCount: 1
     nameOverride: ""
     fullnameOverride: ""
-    livenessProbe: {}
-    readinessProbe: {}
     podAnnotations: {}
     podSecurityContext:
     securityContext: {}

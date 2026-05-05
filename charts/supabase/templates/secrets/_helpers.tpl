@@ -73,6 +73,7 @@ Expand the name of the meta secret.
 {{- printf "%s-meta" (include "supabase.fullname" .) }}
 {{- end -}}
 
+
 {{/*
 Expand the name of the realtime secret.
 */}}

@@ -50,3 +50,10 @@ Persistent volume claim name for edge functions shared storage
 {{- define "supabase.functions.persistenceClaimName" -}}
 {{- printf "%s-pvc" (include "supabase.functions.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{- define "supabase.functions.healthToken" -}}
+{{- if not (index . "_functionsHealthToken") -}}
+{{- $_ := set . "_functionsHealthToken" (randAlphaNum 32) -}}
+{{- end -}}
+{{- index . "_functionsHealthToken" -}}
+{{- end }}

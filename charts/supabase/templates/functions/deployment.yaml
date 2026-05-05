@@ -99,17 +99,33 @@ spec:
                   {{- end }}
             - name: SUPABASE_DB_URL
               value: $(DB_DRIVER)://$(DB_USERNAME):$(DB_PASSWORD_ENC)@$(DB_HOSTNAME):$(DB_PORT)/$(DB_DATABASE)?search_path=auth&sslmode=$(DB_SSL)
+            - name: __HEALTH_TOKEN__
+              value: {{ include "supabase.functions.healthToken" $ | quote }}
             {{- with .Values.deployment.functions.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.deployment.functions.livenessProbe }}
           livenessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.deployment.functions.readinessProbe }}
+            httpGet:
+              path: /_internal/health
+              port: 9000
+              httpHeaders:
+                - name: x-health-token
+                  value: {{ include "supabase.functions.healthToken" $ | quote }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           readinessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            httpGet:
+              path: /_internal/health
+              port: 9000
+              httpHeaders:
+                - name: x-health-token
+                  value: {{ include "supabase.functions.healthToken" $ | quote }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           volumeMounts:
           {{- with .Values.deployment.functions.volumeMounts }}
             {{- toYaml . | nindent 12 }}
