@@ -13,6 +13,9 @@ TRAEFIK_HELM_VERSION="${TRAEFIK_HELM_VERSION:-39.0.8}"
 GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.4.0}"
 CLOUD_PROVIDER_KIND_VERSION="${CLOUD_PROVIDER_KIND_VERSION:-v0.10.0}"
 CLOUD_PROVIDER_KIND_NAME="${CLOUD_PROVIDER_KIND_NAME:-cloud-provider-kind}"
+KIND_REGISTRY_NAME="${KIND_REGISTRY_NAME:-kind-registry}"
+KIND_REGISTRY_PORT="${KIND_REGISTRY_PORT:-5001}"
+KIND_REGISTRY_IMAGE="${KIND_REGISTRY_IMAGE:-registry:2}"
 
 usage() {
   cat <<EOF
@@ -30,7 +33,8 @@ Options:
 Env overrides: K8S_VERSION, CERT_MANAGER_VERSION, CNPG_VERSION,
                CNPG_RELEASE_BRANCH, BARMAN_PLUGIN_VERSION,
                TRAEFIK_HELM_VERSION, GATEWAY_API_VERSION,
-               CLOUD_PROVIDER_KIND_VERSION, CLOUD_PROVIDER_KIND_NAME
+               CLOUD_PROVIDER_KIND_VERSION, CLOUD_PROVIDER_KIND_NAME,
+               KIND_REGISTRY_NAME, KIND_REGISTRY_PORT, KIND_REGISTRY_IMAGE
 EOF
 }
 
@@ -69,6 +73,19 @@ wait_deployment() {
 cmd_create() {
   local CTX; CTX="$(ctx)"
 
+  # Shared docker.io pull-through cache. Survives cluster recreate so layers
+  # pulled by any prior cluster are reused instantly on the next one.
+  if docker inspect "$KIND_REGISTRY_NAME" >/dev/null 2>&1; then
+    echo "Shared '$KIND_REGISTRY_NAME' already running."
+  else
+    docker run -d \
+      --name "$KIND_REGISTRY_NAME" \
+      --restart=always \
+      -p "127.0.0.1:${KIND_REGISTRY_PORT}:5000" \
+      -e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
+      "$KIND_REGISTRY_IMAGE"
+  fi
+
   if kind get clusters | grep -qx "$NAME"; then
     echo "Cluster '$NAME' already exists — skipping create."
   else
@@ -80,6 +97,10 @@ apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   apiServerAddress: "0.0.0.0"
   kubeProxyMode: "ipvs"
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
 EOF
@@ -98,8 +119,17 @@ EOF
     kind create cluster --name "$NAME" --image "kindest/node:$K8S_VERSION" --config "$tmp/kind-config.yaml"
   fi
 
+  # Attach registry to kind network so nodes can reach it as kind-registry:5000.
+  docker network connect kind "$KIND_REGISTRY_NAME" 2>/dev/null || true
+
+  # Point docker.io pulls on every node at the shared registry.
   for node in $(kind get nodes --name "$NAME"); do
     docker exec "$node" sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512
+    docker exec "$node" mkdir -p /etc/containerd/certs.d/docker.io
+    docker exec -i "$node" sh -c 'cat >/etc/containerd/certs.d/docker.io/hosts.toml' <<EOF
+[host."http://${KIND_REGISTRY_NAME}:5000"]
+  capabilities = ["pull", "resolve"]
+EOF
   done
 
   # Shared cloud-provider-kind container serves LB IPs for ALL kind clusters.
@@ -261,9 +291,10 @@ cmd_destroy() {
   fi
 
   echo
-  echo "Shared '$CLOUD_PROVIDER_KIND_NAME' container is left running so other"
-  echo "clusters continue to get LoadBalancer IPs. Remove it manually when done:"
-  echo "  docker rm -f $CLOUD_PROVIDER_KIND_NAME"
+  echo "Shared containers are left running for reuse across clusters."
+  echo "Remove them manually when done:"
+  echo "  docker rm -f $CLOUD_PROVIDER_KIND_NAME   # LoadBalancer IPs"
+  echo "  docker rm -f $KIND_REGISTRY_NAME        # docker.io pull-through cache"
 }
 
 if [[ $# -lt 1 ]]; then usage; exit 2; fi
