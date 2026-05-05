@@ -3,106 +3,146 @@ import * as jose from 'https://deno.land/x/jose@v4.14.4/index.ts'
 console.log('main function started')
 
 const JWT_SECRET = Deno.env.get('JWT_SECRET')
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const VERIFY_JWT = Deno.env.get('VERIFY_JWT') === 'true'
 const HEALTH_TOKEN = Deno.env.get('__HEALTH_TOKEN__')
 
-function getAuthToken(req: Request) {
-const authHeader = req.headers.get('authorization')
-if (!authHeader) {
-    throw new Error('Missing authorization header')
-}
-const [bearer, token] = authHeader.split(' ')
-if (bearer !== 'Bearer') {
-    throw new Error(`Auth header is not 'Bearer {token}'`)
-}
-return token
+let SUPABASE_JWT_KEYS: ReturnType<typeof jose.createRemoteJWKSet> | null = null
+if (SUPABASE_URL) {
+  try {
+    SUPABASE_JWT_KEYS = jose.createRemoteJWKSet(
+      new URL('/auth/v1/.well-known/jwks.json', SUPABASE_URL)
+    )
+  } catch (e) {
+    console.error('Failed to fetch JWKS from SUPABASE_URL:', e)
+  }
 }
 
-async function verifyJWT(jwt: string): Promise<boolean> {
-const encoder = new TextEncoder()
-const secretKey = encoder.encode(JWT_SECRET)
-try {
-    await jose.jwtVerify(jwt, secretKey)
-} catch (err) {
-    console.error(err)
-    return false
+function getAuthToken(req: Request) {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader) {
+    throw new Error('Missing authorization header')
+  }
+  const [bearer, token] = authHeader.split(' ')
+  if (bearer !== 'Bearer') {
+    throw new Error(`Auth header is not 'Bearer {token}'`)
+  }
+  return token
 }
-return true
+
+async function isValidLegacyJWT(jwt: string): Promise<boolean> {
+  if (!JWT_SECRET) {
+    console.error('JWT_SECRET not available for HS256 token verification')
+    return false
+  }
+  const encoder = new TextEncoder()
+  const secretKey = encoder.encode(JWT_SECRET)
+  try {
+    await jose.jwtVerify(jwt, secretKey)
+  } catch (e) {
+    console.error('Symmetric Legacy JWT verification error', e)
+    return false
+  }
+  return true
+}
+
+async function isValidJWT(jwt: string): Promise<boolean> {
+  if (!SUPABASE_JWT_KEYS) {
+    console.error('JWKS not available for ES256/RS256 token verification')
+    return false
+  }
+  try {
+    await jose.jwtVerify(jwt, SUPABASE_JWT_KEYS)
+  } catch (e) {
+    console.error('Asymmetric JWT verification error', e)
+    return false
+  }
+  return true
+}
+
+async function isValidHybridJWT(jwt: string): Promise<boolean> {
+  const { alg: jwtAlgorithm } = jose.decodeProtectedHeader(jwt)
+  if (jwtAlgorithm === 'HS256') {
+    return await isValidLegacyJWT(jwt)
+  }
+  if (jwtAlgorithm === 'ES256' || jwtAlgorithm === 'RS256') {
+    return await isValidJWT(jwt)
+  }
+  return false
 }
 
 Deno.serve(async (req: Request) => {
-const url = new URL(req.url)
-const { pathname } = url
+  const url = new URL(req.url)
+  const { pathname } = url
 
-if (pathname === '/_internal/health') {
+  if (pathname === '/_internal/health') {
     if (!HEALTH_TOKEN || req.headers.get('x-health-token') !== HEALTH_TOKEN) {
-    return new Response(JSON.stringify({ msg: 'forbidden' }), {
+      return new Response(JSON.stringify({ msg: 'forbidden' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' },
-    })
+      })
     }
     return new Response(JSON.stringify({ message: 'ok' }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     })
-}
+  }
 
-if (req.method !== 'OPTIONS' && VERIFY_JWT) {
+  if (req.method !== 'OPTIONS' && VERIFY_JWT) {
     try {
-    const token = getAuthToken(req)
-    const isValidJWT = await verifyJWT(token)
-
-    if (!isValidJWT) {
+      const token = getAuthToken(req)
+      const isValid = await isValidHybridJWT(token)
+      if (!isValid) {
         return new Response(JSON.stringify({ msg: 'Invalid JWT' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
         })
-    }
+      }
     } catch (e) {
-    console.error(e)
-    return new Response(JSON.stringify({ msg: e.toString() }), {
+      console.error(e)
+      return new Response(JSON.stringify({ msg: e.toString() }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },
-    })
+      })
     }
-}
+  }
 
-const path_parts = pathname.split('/')
-const service_name = path_parts[1]
+  const path_parts = pathname.split('/')
+  const service_name = path_parts[1]
 
-if (!service_name || service_name === '') {
+  if (!service_name || service_name === '') {
     const error = { msg: 'missing function name in request' }
     return new Response(JSON.stringify(error), {
-    status: 400,
-    headers: { 'Content-Type': 'application/json' },
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
     })
-}
+  }
 
-const servicePath = `/home/deno/functions/${service_name}`
-console.error(`serving the request with ${servicePath}`)
+  const servicePath = `/home/deno/functions/${service_name}`
+  console.error(`serving the request with ${servicePath}`)
 
-const memoryLimitMb = parseInt(Deno.env.get('USER_WORKER_MEMORY_LIMIT_MB'))
-const workerTimeoutMs = parseInt(Deno.env.get('USER_WORKER_TIMEOUT_MS'))
-const noModuleCache = Deno.env.get('USER_WORKER_NO_MODULE_CACHE') === 'true'
-const importMapPath = null
-const envVarsObj = Deno.env.toObject()
-const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
+  const memoryLimitMb = parseInt(Deno.env.get('USER_WORKER_MEMORY_LIMIT_MB'))
+  const workerTimeoutMs = parseInt(Deno.env.get('USER_WORKER_TIMEOUT_MS'))
+  const noModuleCache = Deno.env.get('USER_WORKER_NO_MODULE_CACHE') === 'true'
+  const importMapPath = null
+  const envVarsObj = Deno.env.toObject()
+  const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]])
 
-try {
+  try {
     const worker = await EdgeRuntime.userWorkers.create({
-    servicePath,
-    memoryLimitMb,
-    workerTimeoutMs,
-    noModuleCache,
-    importMapPath,
-    envVars,
+      servicePath,
+      memoryLimitMb,
+      workerTimeoutMs,
+      noModuleCache,
+      importMapPath,
+      envVars,
     })
     return await worker.fetch(req)
-} catch (e) {
+  } catch (e) {
     const error = { msg: e.toString() }
     return new Response(JSON.stringify(error), {
-    status: 500,
-    headers: { 'Content-Type': 'application/json' },
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
     })
-}
+  }
 })
