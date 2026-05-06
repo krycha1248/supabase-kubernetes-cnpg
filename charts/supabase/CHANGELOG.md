@@ -9,6 +9,28 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Breaking
 
+- **Bundled object storage replaced: MinIO → SeaweedFS.** The in-cluster S3
+  backend now ships SeaweedFS 4.23 in single-node `weed mini` mode (one
+  process — master, volume server, filer, S3 gateway). MinIO was dropped
+  because the Community Edition was archived in February 2026 and is no
+  longer maintained. Every `minio.*` values key is renamed to
+  `s3.*` (`deployment.s3`, `image.s3`, `service.s3`, `persistence.s3`,
+  `serviceAccount.s3`, `environment.s3`); the dedicated bundled-backend
+  Secret is removed and consolidated into the existing `secret.s3` (fields
+  `keyId` / `accessKey`, used both as Storage API S3 protocol creds and to
+  authenticate against the bundled backend). The createbucket Job is gone
+  — `weed mini` precreates buckets via the `S3_BUCKET` env (comma-separated
+  list). Service port is now `8333` (was `9000`). Single-node only; for HA,
+  leave `deployment.s3.enabled=false` and point
+  `environment.storage.GLOBAL_S3_ENDPOINT` + `secret.s3.existingSecret` at
+  an externally managed S3 cluster (e.g. SeaweedFS operator).
+- **Public URL is no longer per-service.** `environment.auth.API_EXTERNAL_URL`,
+  `environment.auth.GOTRUE_SITE_URL`, and `environment.studio.SUPABASE_PUBLIC_URL`
+  are removed from `values.yaml`. All four public URLs (those three plus
+  `STORAGE_PUBLIC_URL`) are now rendered from a single source via the
+  `supabase.publicUrl` helper, which derives `http://`/`https://` from
+  `tls.enabled` and the hostname from `host`. Set `publicUrl: <full-url>`
+  to override (e.g. when API and frontend live on different hostnames).
 - **Edge Functions delivery is now ConfigMap-only.** The
   `persistence.functions` PVC (RWO, 1 Gi, enabled by default) was a no-op —
   nothing in the chart wrote to it, and its RWO lock silently blocked the
@@ -21,14 +43,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   import graphs should `deno vendor`.
 - **`deployment.functions.testFunction.enabled` removed.** The hello
   fixture is now provisioned automatically by the chart as a helm-test
-  artefact (see *Added* below) and gated by the presence of a
-  `mountPath: hello` entry in `extraConfigMaps`. No explicit toggle.
+  artefact (see *Added* below) and gated by `tests.functions.enabled`
+  (default `false`). Set it to `true` to surface the fixture ConfigMap,
+  the `/hello` mount in the Functions Deployment, and the helm-test Job.
 - **Studio's edge-function browser now reads `deployment.functions.extraConfigMaps`.**
   Previously gated by `persistence.functions.enabled`, it now mounts each
-  declared file from `extraConfigMaps` read-only into the Studio pod and
-  surfaces `EDGE_FUNCTIONS_MANAGEMENT_FOLDER` only when at least one
-  entry is set. No user action required if `extraConfigMaps` is in use;
-  otherwise the Studio UI no longer claims to manage edge functions.
+  declared file from `extraConfigMaps` read-only into the Studio pod.
+  `EDGE_FUNCTIONS_MANAGEMENT_FOLDER` is set unconditionally on Studio so
+  recent versions don't crash on the assertion at startup.
 
 ### Added
 
@@ -43,14 +65,19 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   is `fn-<configmap-name>` (≤ 60 chars to stay under Kubernetes' 63-char
   volume name cap). Studio dispatches the same list (`readOnly: true`)
   so the dashboard can list deployed functions.
+- `tests.functions.enabled` — top-level toggle for the chart-managed
+  hello fixture: gates the fixture ConfigMap, the `/hello` mount in the
+  Functions Deployment, and the `helm test` Job in one place. Default
+  `false`.
 - `templates/test/functions-fixture.configmap.yaml` — chart-managed
   fixture ConfigMap (`{{ .Chart.Name }}-test-hello`) sourced from
-  `files/test/hello.ts`. Rendered only when `extraConfigMaps` includes a
-  `mountPath: hello` entry referencing it.
+  `files/test/hello.ts`. Gated by `tests.functions.enabled`.
 - `templates/test/functions.yaml` — `helm test` hook that POSTs to
-  `/functions/v1/hello` and asserts the response body. Same gating as
-  the fixture ConfigMap; runs automatically on `helm test` (and through
-  `ct install`) whenever the fixture is wired up.
+  `/functions/v1/hello` and asserts the response body. Same gating;
+  runs automatically on `helm test` (and through `ct install`) whenever
+  `tests.functions.enabled` is on.
+- `templates/s3/test.yaml` — `helm test` hook that probes the bundled
+  SeaweedFS S3 endpoint. Gated by `deployment.s3.enabled`.
 - `charts/supabase/ci/with-extra-functions.yaml` — second CI values file
   that activates the fixture so chart-testing exercises the
   `extraConfigMaps` flow end-to-end (the existing `ci/example.yaml`
@@ -58,11 +85,12 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### Changed
 
-- `helm-deploy.sh` provisions the test fixture from
-  `charts/supabase/files/test/hello.ts` (the chart-owned source of
-  truth) instead of an external fixtures directory. The script's
-  defaults values block uses `extraConfigMaps` directly — no special-
-  case toggle.
+- `helm-deploy.sh` enables the chart-managed hello fixture by setting
+  `tests.functions.enabled=true` in its defaults block. The fixture
+  source of truth is `charts/supabase/files/test/hello.ts`. The script
+  also pre-creates the Storage bucket (and, with `--backup`, the backup
+  bucket) by feeding `environment.s3.S3_BUCKET` to `weed mini` —
+  replacing the previous explicit createbucket Job.
 - All `templates/test/*.yaml` jobs migrated from the third-party
   `kdevup/curljq` image to the official `curlimages/curl:8.20.0`
   (pinned). Shell switched from `/bin/bash` to `/bin/sh` (POSIX,

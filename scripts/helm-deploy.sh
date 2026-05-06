@@ -17,9 +17,10 @@ Required:
 
 Optional:
   --backup           Enable the Barman Cloud plugin, point backups at the
-                     in-cluster RustFS, pre-create the backup bucket, apply a
-                     one-shot Backup CR, and wait for it to complete. Used to
-                     smoke-test the backup wiring end-to-end on a kind cluster.
+                     in-cluster SeaweedFS, pre-create the backup bucket via
+                     the bundled S3 backend's S3_BUCKET env, apply a one-shot
+                     Backup CR, and wait for it to complete. Used to smoke-test
+                     the backup wiring end-to-end on a kind cluster.
 
 Positional:
   <release-name>     Helm release + namespace (default: supabase)
@@ -96,17 +97,11 @@ echo "Chart    : $CHART_PATH"
 echo "Host     : $DOMAIN"
 echo "Edge     : $EDGE"
 echo "Workers  : $WORKER_NODES (used as Functions replicaCount)"
-$BACKUP && echo "Backup   : enabled (in-cluster RustFS)"
+$BACKUP && echo "Backup   : enabled (in-cluster SeaweedFS)"
 
 # Namespace ---------------------------------------------------------------
 kubectl --context "$CTX" create namespace "$RELEASE" --dry-run=client -o yaml \
   | kubectl --context "$CTX" apply -f -
-
-# Test fixture -------------------------------------------------------------
-HELLO_CM="${RELEASE}-test-hello"
-kubectl --context "$CTX" -n "$RELEASE" create configmap "$HELLO_CM" \
-  --from-file=index.ts="$CHART_PATH/files/test/hello.ts" \
-  --dry-run=client -o yaml | kubectl --context "$CTX" apply -f -
 
 # Values layering ---------------------------------------------------------
 HELM_VALUES_ARGS=()
@@ -116,11 +111,21 @@ TMP_VALUES_FILES=()
 cleanup_tmp_values() { [[ ${#TMP_VALUES_FILES[@]} -gt 0 ]] && rm -f "${TMP_VALUES_FILES[@]}"; }
 trap cleanup_tmp_values EXIT
 
+CNPG_CLUSTER="supabase-db"
+BACKUP_BUCKET="supabase-backup"
+STORAGE_BUCKET="stub"
+
+# weed mini precreates buckets listed in S3_BUCKET (comma-separated). Always
+# include the Storage API bucket; append the backup bucket only when --backup
+# is on, so non-backup runs don't carry it.
+S3_BUCKETS="$STORAGE_BUCKET"
+$BACKUP && S3_BUCKETS="${S3_BUCKETS},${BACKUP_BUCKET}"
+
 # Test-deploy defaults: pin Functions to one replica per worker node, disable
 # HPA so the Deployment is a stable iteration target, and always enable the
-# in-cluster RustFS as the Storage API S3 backend (and as the destination for
-# the optional --backup smoke test below). Layered first so user values files
-# / --backup overrides take precedence.
+# in-cluster SeaweedFS as the Storage API S3 backend (and as the destination
+# for the optional --backup smoke test below). Layered first so user values
+# files / --backup overrides take precedence.
 DEFAULTS_VALUES="/tmp/supabase-deploy-defaults_$$_$RANDOM.yaml"
 TMP_VALUES_FILES+=("$DEFAULTS_VALUES")
 cat >"$DEFAULTS_VALUES" <<EOF
@@ -130,10 +135,13 @@ autoscaling:
 deployment:
   functions:
     replicaCount: ${WORKER_NODES}
-    extraConfigMaps:
-      - name: ${HELLO_CM}
-        mountPath: hello
-  rustfs:
+  s3:
+    enabled: true
+environment:
+  s3:
+    S3_BUCKET: "${S3_BUCKETS}"
+tests:
+  functions:
     enabled: true
 EOF
 HELM_VALUES_ARGS+=(-f "$DEFAULTS_VALUES")
@@ -143,7 +151,7 @@ LOCAL_VALUES="$VALUES_DIR/$CHART.local.yaml"
 [[ -f "$BASE_VALUES"  ]] && HELM_VALUES_ARGS+=(-f "$BASE_VALUES")
 [[ -f "$LOCAL_VALUES" ]] && HELM_VALUES_ARGS+=(-f "$LOCAL_VALUES")
 
-# --- Name helpers (mirror helm's supabase.fullname / supabase.rustfs.fullname).
+# --- Name helpers (mirror helm's supabase.fullname / supabase.s3.fullname).
 # For release names that already contain the chart name, helm collapses the
 # fullname to the release name — so for release=supabase the dashboard secret
 # is "supabase-dashboard", not "supabase-supabase-dashboard".
@@ -152,12 +160,10 @@ case "$RELEASE" in
   *)          FULLNAME="${RELEASE}-supabase" ;;
 esac
 case "$RELEASE" in
-  *supabase-rustfs*) RUSTFS_SVC="$RELEASE" ;;
-  *)                 RUSTFS_SVC="${RELEASE}-supabase-rustfs" ;;
+  *supabase-s3*) S3_SVC="$RELEASE" ;;
+  *)             S3_SVC="${RELEASE}-supabase-s3" ;;
 esac
-RUSTFS_SECRET="${FULLNAME}-rustfs"
-CNPG_CLUSTER="supabase-db"
-BACKUP_BUCKET="supabase-backup"
+S3_SECRET="${FULLNAME}-s3"
 
 if $BACKUP; then
   BACKUP_VALUES="/tmp/supabase-backup-values_$$_$RANDOM.yaml"
@@ -169,14 +175,14 @@ cnpg:
     objectStore:
       configuration:
         destinationPath: s3://${BACKUP_BUCKET}/
-        endpointURL: http://${RUSTFS_SVC}:9000
+        endpointURL: http://${S3_SVC}:8333
         s3Credentials:
           accessKeyId:
-            name: ${RUSTFS_SECRET}
-            key: user
+            name: ${S3_SECRET}
+            key: keyId
           secretAccessKey:
-            name: ${RUSTFS_SECRET}
-            key: password
+            name: ${S3_SECRET}
+            key: accessKey
         wal:
           compression: gzip
         data:
@@ -250,43 +256,12 @@ Edge Functions test fixture (provisioned via extraConfigMaps[hello]):
 EOF
 
 # --- Backup smoke test --------------------------------------------------
-# Pre-creates the backup bucket in the in-cluster RustFS (CNPG's barman-cloud
-# plugin expects it to exist), then triggers an on-demand Backup CR and waits
-# for it to complete. The ScheduledBackup in values has immediate=true, but
-# its first Backup races with bucket creation — we don't rely on it. A single
-# explicit Backup CR gives a deterministic pass/fail signal.
+# weed mini precreates the backup bucket via S3_BUCKET env (set above when
+# --backup is on) — no explicit bucket-init step needed. Trigger an on-demand
+# Backup CR and wait for it to complete. The ScheduledBackup in values has
+# immediate=true, but its first Backup may race with cluster bring-up — we
+# don't rely on it. A single explicit Backup CR gives a deterministic signal.
 if $BACKUP; then
-  echo
-  echo "Backup: bootstrapping RustFS bucket '$BACKUP_BUCKET'..."
-
-  # Wait for the RustFS StatefulSet to be Ready — helm --wait already gates
-  # on this, but be explicit so failures are attributed correctly.
-  kubectl --context "$CTX" -n "$RELEASE" rollout status \
-    "statefulset/$RUSTFS_SVC" --timeout=120s
-
-  rc_user="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$RUSTFS_SECRET" \
-    -o jsonpath='{.data.user}' | base64 -d)"
-  rc_pass="$(kubectl --context "$CTX" -n "$RELEASE" get secret "$RUSTFS_SECRET" \
-    -o jsonpath='{.data.password}' | base64 -d)"
-  if [[ -z "$rc_user" || -z "$rc_pass" ]]; then
-    echo "ERROR: could not read RustFS credentials from secret '$RUSTFS_SECRET'." >&2
-    exit 4
-  fi
-
-  # Short-lived rc pod. --rm + --restart=Never + --attach gives us exit status.
-  kubectl --context "$CTX" -n "$RELEASE" run "supabase-backup-bucket-init" \
-    --image=rustfs/rc:v0.1.13 \
-    --restart=Never \
-    --rm --attach --quiet \
-    --env="RC_ENDPOINT=http://${RUSTFS_SVC}:9000" \
-    --env="RC_USER=$rc_user" \
-    --env="RC_PASS=$rc_pass" \
-    --env="RC_BUCKET=$BACKUP_BUCKET" \
-    --command -- sh -c \
-      'rc alias set s3 "$RC_ENDPOINT" "$RC_USER" "$RC_PASS" >/dev/null \
-        && rc mb --ignore-existing "s3/$RC_BUCKET" \
-        && echo "bucket $RC_BUCKET ready"'
-
   echo
   echo "Backup: triggering smoke Backup CR and waiting for completion..."
 

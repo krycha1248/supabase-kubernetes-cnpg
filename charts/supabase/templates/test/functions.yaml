@@ -1,8 +1,4 @@
-{{- $hasHello := false -}}
-{{- range .Values.deployment.functions.extraConfigMaps -}}
-  {{- if eq .mountPath "hello" -}}{{- $hasHello = true -}}{{- end -}}
-{{- end -}}
-{{- if and .Values.deployment.functions.enabled $hasHello -}}
+{{- if and .Values.deployment.functions.enabled .Values.tests.functions.enabled -}}
 apiVersion: batch/v1
 kind: Job
 metadata:

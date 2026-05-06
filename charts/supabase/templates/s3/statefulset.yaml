@@ -1,0 +1,127 @@
+{{- if .Values.deployment.s3.enabled -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "supabase.s3.fullname" . }}
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "supabase.s3.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "supabase.s3.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.deployment.s3.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "supabase.s3.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.image.s3.pullSecrets}}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "supabase.s3.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.deployment.s3.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ include "supabase.s3.name" $ }}
+          securityContext:
+            {{- toYaml .Values.deployment.s3.securityContext | nindent 12 }}
+          image: "{{ .Values.image.s3.repository }}:{{ .Values.image.s3.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.s3.pullPolicy }}
+          args:
+            - mini
+            - -dir=/data
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.secret.s3.existingSecret }}
+                  name: {{ .Values.secret.s3.existingSecret }}
+                  key: {{ .Values.secret.s3.existingSecretKey.keyId | default "keyId" }}
+                  {{- else }}
+                  name: {{ include "supabase.secret.s3" . }}
+                  key: keyId
+                  {{- end }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.secret.s3.existingSecret }}
+                  name: {{ .Values.secret.s3.existingSecret }}
+                  key: {{ .Values.secret.s3.existingSecretKey.accessKey | default "accessKey" }}
+                  {{- else }}
+                  name: {{ include "supabase.secret.s3" . }}
+                  key: accessKey
+                  {{- end }}
+            {{- range $key, $value := .Values.environment.s3 }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.deployment.s3.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.deployment.s3.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployment.s3.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: s3
+              containerPort: 8333
+              protocol: TCP
+          {{- with .Values.deployment.s3.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+          {{- with .Values.deployment.s3.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - mountPath: /data
+              name: data
+      {{- with .Values.deployment.s3.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.s3.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.s3.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.s3.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.s3.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        {{- with .Values.persistence.s3.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.persistence.s3.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if .Values.persistence.storageClassName }}
+        storageClassName: {{ .Values.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.s3.size | quote }}
+{{- end }}

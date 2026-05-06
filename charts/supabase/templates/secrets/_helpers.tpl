@@ -89,13 +89,6 @@ Expand the name of the s3 secret.
 {{- end -}}
 
 {{/*
-Expand the name of the rustfs secret.
-*/}}
-{{- define "supabase.secret.rustfs" -}}
-{{- printf "%s-rustfs" (include "supabase.fullname" .) }}
-{{- end -}}
-
-{{/*
 Expand the name of the bigquery secret.
 */}}
 {{- define "supabase.secret.bigquery" -}}

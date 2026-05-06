@@ -22,7 +22,7 @@ secret:
     cryptoKey: "your-super-secret-and-long-crypto-key"
 
 deployment:
-  rustfs:
+  s3:
     enabled: true
 
 persistence:

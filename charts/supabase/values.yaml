@@ -16,7 +16,7 @@
 ## - Logflare (Analytics)
 ## - Vector (Logs pipeline)
 ## - Imgproxy (Image transformation)
-## - RustFS (S3-compatible storage)
+## - SeaweedFS (S3-compatible storage)
 ##
 ## This chart mirrors the official Supabase
 ## Docker setup, adapted for Kubernetes.
@@ -98,7 +98,7 @@ secret:
 
     ## All Secrets below are auto-generated on first install by the
     ## `credentials-generator` pre-install Job. Passwords/tokens are random
-    ## (openssl rand); non-password fields (username, OpenAI key, RustFS user)
+    ## (openssl rand); non-password fields (username, OpenAI key)
     ## accept optional inline overrides. Existing Secrets are never overwritten
     ## — delete the Secret to trigger regeneration.
     ##
@@ -142,12 +142,13 @@ secret:
       openAiApiKey: openAiApiKey
 
     ## S3-compatible credentials (keyId, accessKey) — both random.
+    ## Used for both the Storage API S3 protocol frontend and to
+    ## authenticate against the bundled SeaweedFS backend (when enabled).
   s3:
     existingSecret: null
     existingSecretKey:
       keyId: keyId
       accessKey: accessKey
-      password: password
 
     ## Realtime service SECRET_KEY_BASE (Phoenix) — random.
     ## Docs: https://supabase.com/docs/guides/realtime
@@ -162,15 +163,6 @@ secret:
     existingSecret: null
     existingSecretKey:
       cryptoKey: cryptoKey
-
-    ## RustFS root credentials. `user` defaults to "supa-storage", `password` is random.
-  rustfs:
-    # user: "supa-storage"
-    existingSecret: null
-    existingSecretKey:
-      user: user
-      password: password
-
 
   generator:
     serviceAccount:
@@ -342,7 +334,7 @@ deployment:
       # minAvailable: 1
       # maxUnavailable: 1
 
-  rustfs:
+  s3:
     enabled: false
     replicaCount: 1
     nameOverride: ""
@@ -510,13 +502,11 @@ image:
     tag: "v0.96.3"
     pullSecrets: []
 
-  rustfs:
-    repository: rustfs/rustfs
+  s3:
+    repository: chrislusf/seaweedfs
     pullPolicy: IfNotPresent
-    tag: "1.0.0-beta.1"
+    tag: "4.23"
     pullSecrets: []
-    rcRepository: rustfs/rc
-    rcTag: "v0.1.13"
 
   realtime:
     repository: supabase/realtime
@@ -574,10 +564,8 @@ environment:
     DB_DRIVER: postgres
     ## SSL mode options: disable, allow, prefer, require, verify-ca, verify-full
     DB_SSL: disable
-    API_EXTERNAL_URL: http://supabase.local
     GOTRUE_API_HOST: "0.0.0.0"
     GOTRUE_API_PORT: "9999"
-    GOTRUE_SITE_URL: http://supabase.local
     GOTRUE_URI_ALLOW_LIST: "*"
     GOTRUE_DISABLE_SIGNUP: "false"
     GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
@@ -667,7 +655,7 @@ environment:
     DB_SSL: disable
     PG_META_PORT: "8080"
 
-  rustfs: {}
+  s3: {}
 
   realtime:
     DB_USER: supabase_admin
@@ -718,7 +706,6 @@ environment:
     POSTGRES_PORT: 5432
     DEFAULT_ORGANIZATION_NAME: Default Organization
     DEFAULT_PROJECT_NAME: Default Project
-    SUPABASE_PUBLIC_URL: http://supabase.local
     NEXT_PUBLIC_ENABLE_LOGS: true
     ## Set value to bigquery to use Big Query backend for analytics (postgres or bigquery)
     NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
@@ -726,7 +713,7 @@ environment:
   vector: {}
 
 ## StorageClass is chart-wide. Two top-level knobs:
-##   - storageClassName:       block (RWO) volumes — CNPG + rustfs
+##   - storageClassName:       block (RWO) volumes — CNPG + s3
 ##   - storageClassNameShared: shared (RWX) volumes — snippets, imgproxy
 ##                             (Studio↔Functions snippet mount; imgproxy reads
 ##                             files written by storage-api in file backend
@@ -753,7 +740,7 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-  rustfs:
+  s3:
     annotations: {}
     size: 1Gi
     accessModes:
@@ -831,10 +818,10 @@ service:
     labels: {}
     portName: http
 
-  rustfs:
+  s3:
     type: ClusterIP
-    port: 9000
-    targetPort: 9000
+    port: 8333
+    targetPort: 8333
     protocol: TCP
     annotations: {}
     labels: {}
@@ -968,6 +955,11 @@ autoscaling:
     ## Gateway API HTTPRoute. Override per environment.
 host: supabase.local
 
+tls:
+  enabled: false
+
+publicUrl: null
+
 ## Gateway API HTTPRoute toggle (alternative to Ingress — alpha).
 ## Exactly one of ingress.enabled / gateway.enabled should be true.
 gateway:
@@ -1020,7 +1012,7 @@ serviceAccount:
   imgproxy: {}
   kong: {}
   meta: {}
-  rustfs: {}
+  s3: {}
   realtime: {}
   rest: {}
   storage: {}
@@ -1173,17 +1165,17 @@ cnpg:
       ## Pass-through to ObjectStore.spec.configuration. Required when
       ## existingName is empty — the chart does not invent a destination.
       ##
-      ## Example — in-cluster bundled RustFS (see `rustfs:` section):
+      ## Example — in-cluster bundled SeaweedFS (see `s3:` section):
       ## configuration:
       ##   destinationPath: s3://supabase-backup/
-      ##   endpointURL: http://supabase-rustfs:9000
+      ##   endpointURL: http://supabase-s3:8333
       ##   s3Credentials:
       ##     accessKeyId:
-      ##       name: supabase-rustfs
-      ##       key: user
+      ##       name: supabase-s3
+      ##       key: keyId
       ##     secretAccessKey:
-      ##       name: supabase-rustfs
-      ##       key: password
+      ##       name: supabase-s3
+      ##       key: accessKey
       ##   wal:
       ##     compression: gzip
       ##   data:
@@ -1234,3 +1226,7 @@ cnpg:
 
       ## backupOwnerReference: "none" | "self" | "cluster".
       backupOwnerReference: "self"
+
+tests:
+  functions:
+    enabled: false

@@ -52,6 +52,10 @@ spec:
           image: "{{ .Values.image.auth.repository }}:{{ .Values.image.auth.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.auth.pullPolicy }}
           env:
+            - name: API_EXTERNAL_URL
+              value: {{ include "supabase.publicUrl" . | quote }}
+            - name: GOTRUE_SITE_URL
+              value: {{ include "supabase.publicUrl" . | quote }}
             {{- range $key, $value := .Values.environment.auth }}
             - name: {{ $key }}
               value: {{ $value | quote }}

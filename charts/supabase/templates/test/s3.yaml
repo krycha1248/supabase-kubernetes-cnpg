@@ -1,0 +1,30 @@
+{{- if .Values.deployment.s3.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "supabase.fullname" . }}-test-s3
+  labels:
+    {{- include "supabase.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      containers:
+        - name: test-s3
+          image: curlimages/curl:8.20.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              URL="http://{{ include "supabase.s3.fullname" . }}:{{ .Values.service.s3.port }}/"
+              code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || echo 000)"
+              case "$code" in
+                2*|3*|4*) echo "S3 endpoint $URL responded with HTTP $code" ;;
+                *)        echo "S3 endpoint $URL unreachable (HTTP $code)" >&2; exit 1 ;;
+              esac
+      restartPolicy: Never
+{{- end }}

@@ -61,3 +61,19 @@ Create the name of the service account to use
 {{- end }}
 {{- end }}
 
+{{/*
+Public URL exposed to end users. Single source of truth for
+API_EXTERNAL_URL / GOTRUE_SITE_URL / SUPABASE_PUBLIC_URL / STORAGE_PUBLIC_URL.
+Resolution order:
+  1. .Values.publicUrl — explicit override (full URL, takes precedence).
+  2. .Values.tls.enabled ? https : http, joined with .Values.host.
+*/}}
+{{- define "supabase.publicUrl" -}}
+{{- if .Values.publicUrl -}}
+{{- .Values.publicUrl -}}
+{{- else -}}
+{{- $scheme := ternary "https" "http" .Values.tls.enabled -}}
+{{- printf "%s://%s" $scheme .Values.host -}}
+{{- end -}}
+{{- end }}
+

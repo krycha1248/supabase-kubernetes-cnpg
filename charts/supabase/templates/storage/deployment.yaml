@@ -98,7 +98,7 @@ spec:
                   key: secret
                   {{- end }}
             - name: STORAGE_PUBLIC_URL
-              value: {{ .Values.environment.auth.API_EXTERNAL_URL | quote }}
+              value: {{ include "supabase.publicUrl" . | quote }}
             # JWKS (EC public + legacy symmetric) for asymmetric token verification.
             - name: JWT_JWKS
               valueFrom:
@@ -151,36 +151,17 @@ spec:
             {{- end }}
             
             - name: STORAGE_BACKEND
-              value: {{ if or .Values.deployment.rustfs.enabled .Values.environment.storage.GLOBAL_S3_ENDPOINT }}s3{{ else }}file{{ end }}
+              value: {{ if or .Values.deployment.s3.enabled .Values.environment.storage.GLOBAL_S3_ENDPOINT }}s3{{ else }}file{{ end }}
 
-            {{- if .Values.deployment.rustfs.enabled }}
+            {{- if .Values.deployment.s3.enabled }}
             - name: GLOBAL_S3_ENDPOINT
-              value: http://{{ include "supabase.rustfs.fullname" . }}:{{ default 9000 .Values.service.rustfs.port }}
+              value: http://{{ include "supabase.s3.fullname" . }}:{{ default 8333 .Values.service.s3.port }}
             - name: GLOBAL_S3_PROTOCOL
               value: http
             - name: GLOBAL_S3_FORCE_PATH_STYLE
               value: "true"
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                {{- if .Values.secret.rustfs.existingSecret }}
-                  name: {{ .Values.secret.rustfs.existingSecret }}
-                  key: {{ .Values.secret.rustfs.existingSecretKey.user | default "user" }}
-                {{- else }}
-                  name: {{ include "supabase.secret.rustfs" . }}
-                  key: user
-                {{- end }}
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                {{- if .Values.secret.rustfs.existingSecret }}
-                  name: {{ .Values.secret.rustfs.existingSecret }}
-                  key: {{ .Values.secret.rustfs.existingSecretKey.password | default "password" }}
-                {{- else }}
-                  name: {{ include "supabase.secret.rustfs" . }}
-                  key: password
-                {{- end }}
-            {{- else if .Values.environment.storage.GLOBAL_S3_ENDPOINT }}
+            {{- end }}
+            {{- if or .Values.deployment.s3.enabled .Values.environment.storage.GLOBAL_S3_ENDPOINT }}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
