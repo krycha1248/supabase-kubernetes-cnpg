@@ -7,6 +7,18 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Added
+
+- **Database restore via barman-cloud.** New `cnpg.restore` block in `values.yaml`
+  enables bootstrapping the CNPG Cluster in `bootstrap.recovery` mode instead of
+  `bootstrap.initdb`. When `cnpg.restore.enabled: true` the chart renders a
+  `bootstrap.recovery` section pointing at the named ObjectStore and adds the
+  corresponding `externalClusters` entry required by the barman-cloud plugin.
+  Optional fields `targetTime`, `targetLSN`, `targetXID`, and `backupName` support
+  Point-in-Time Recovery and selecting a specific backup. After a successful restore,
+  set `cnpg.restore.enabled` back to `false` and run `helm upgrade` so CNPG returns
+  to normal operation.
+
 ### Breaking
 
 - **Bundled object storage replaced: MinIO → SeaweedFS.** The in-cluster S3
