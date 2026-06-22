@@ -9,6 +9,7 @@
   disabled (all three sources empty/false).
 */}}
 {{- $restoreObjectStoreName := "" }}
+{{- $restoreServerName := .Values.cnpg.restore.serverName | default .Values.cnpg.clusterName }}
 {{- if .Values.cnpg.restore.enabled }}
   {{- if .Values.cnpg.restore.objectStoreName }}
     {{- $restoreObjectStoreName = .Values.cnpg.restore.objectStoreName }}
@@ -200,5 +201,6 @@ spec:
         name: barman-cloud.cloudnative-pg.io
         parameters:
           barmanObjectName: {{ $restoreObjectStoreName }}
+          serverName: {{ $restoreServerName }}
   {{- end }}
 {{- end }}

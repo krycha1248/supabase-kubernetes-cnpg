@@ -1249,6 +1249,12 @@ cnpg:
     ## "<cnpg.clusterName>-backup".
     objectStoreName: ""
 
+    ## Name of the server as stored in the S3 backup (barman's serverName).
+    ## Defaults to cnpg.clusterName when empty — which is correct when the
+    ## backup was taken from a cluster with the same name.
+    ## Set explicitly when restoring from a backup made by a differently-named cluster.
+    serverName: ""
+
     ## Point-in-Time Recovery (PITR) target time (ISO 8601).
     ## Example: "2024-01-15T10:30:00Z"
     ## If empty, restore to the latest available point.
