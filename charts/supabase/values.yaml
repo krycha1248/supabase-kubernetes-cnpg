@@ -209,8 +209,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-analytics
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-analytics
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -232,8 +246,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-auth
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-auth
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -253,8 +281,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-functions
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-functions
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -277,8 +319,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-imgproxy
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-imgproxy
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -300,8 +356,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-kong
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-kong
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -323,8 +393,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-meta
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-meta
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -346,8 +430,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-s3
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-s3
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -365,8 +463,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-realtime
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-realtime
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -388,8 +500,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-rest
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-rest
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -411,8 +537,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-storage
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-storage
     volumeMounts: {}
     volumes: {}
     resources: {}
@@ -458,8 +598,22 @@ deployment:
     securityContext: {}
     nodeSelector: {}
     tolerations: []
-    affinity: {}
-    topologySpreadConstraints: []
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: supabase-vector
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: supabase-vector
     volumeMounts: {}
     volumes: {}
     resources: {}
