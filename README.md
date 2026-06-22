@@ -1,4 +1,4 @@
-# Supabase Kubernetes (CNPG variant) 
+# Supabase Kubernetes (CNPG variant)
 
 Opinionated fork of [supabase-community/supabase-kubernetes](https://github.com/supabase-community/supabase-kubernetes) that replaces the single-pod Postgres StatefulSet with a [CloudNativePG](https://cloudnative-pg.io/) (CNPG) `Cluster`.
 
