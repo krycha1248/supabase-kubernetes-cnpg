@@ -443,65 +443,105 @@ Some upstream migrations assume state the chart does not ship and are skipped (s
 
 ## Database Restore
 
+### Overview
+
 The chart can restore a CNPG cluster from a barman-cloud backup stored in S3 (or any
 other ObjectStore-compatible backend). When `cnpg.restore.enabled` is `true` the cluster
 bootstraps via `bootstrap.recovery` instead of `bootstrap.initdb`, pointing CNPG at the
 named `ObjectStore` CR through the `barman-cloud.cloudnative-pg.io` plugin.
+
+Prerequisites:
+- Backup must already be configured (`cnpg.backup.enabled: true` or an existing `ObjectStore`).
+- CloudNativePG operator **≥ 1.28.2** — earlier versions are missing CRD fields the chart relies on.
 
 > **Warning:** After the restore completes successfully, set `cnpg.restore.enabled` back
 > to `false` and run `helm upgrade`. CNPG requires the `bootstrap.recovery` block to be
 > removed from the `Cluster` CR before it will start new replicas or allow a primary
 > promotion. Leaving it set to `true` prevents normal cluster operation.
 
-### WAL archive isolation during restore
+### How it works — WAL archive isolation
 
-Each restore operation must write its WALs to a **new, empty S3 path** so that
-`barman-cloud-check-wal-archive` does not abort with `Expected empty archive`.
-This is controlled by `cnpg.restore.targetServerName`.
+Barman identifies each WAL stream by `serverName` — the S3 key prefix under which base
+backups and WAL segments are stored (e.g. `s3://bucket/<serverName>/`). During a restore
+the plugin must **write** new WALs to a different prefix than the one it **reads** the
+backup from. If the target path already contains WAL data,
+`barman-cloud-check-wal-archive` aborts the restore with `Expected empty archive`.
 
-| Field | Purpose |
-|-------|---------|
-| `cnpg.restore.serverName` | **Read** source — the S3 prefix from which barman fetches the backup. Defaults to `cnpg.clusterName`. |
-| `cnpg.restore.targetServerName` | **Write** destination — the S3 prefix under which new WALs are archived during and after the restore. Must be unique per restore. Defaults to `<clusterName>-r1` when `restore.enabled=true`. |
+This is controlled by two separate fields:
 
-After restore completes and you flip `restore.enabled` back to `false`, set
-`targetServerName` to the same value you used during the restore so ongoing
-backups continue under the same path.
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `cnpg.restore.serverName` | S3 prefix from which barman **reads** the backup (`externalClusters`) | `cnpg.clusterName` |
+| `cnpg.restore.targetServerName` | S3 prefix to which barman **writes** new WALs during and after the restore | `<clusterName>-r1` when `restore.enabled=true` |
+
+> **Warning:** `targetServerName` must remain in `values.yaml` permanently after every
+> restore — even when `restore.enabled: false`. Barman archives ongoing WALs under this
+> path. Removing it causes new backups to fall back to the default cluster name, breaking
+> WAL continuity required for PITR.
+
+### ObjectStore name resolution
+
+`cnpg.restore.objectStoreName` is resolved in priority order:
+
+1. `cnpg.restore.objectStoreName` — explicit override (recommended)
+2. `cnpg.backup.objectStore.existingName` — shared ObjectStore already used for backups
+3. `<cnpg.clusterName>-backup` — the name the chart generates when `cnpg.backup.enabled=true`
+
+If none of the three can be determined (all empty and `cnpg.backup.enabled=false`), the
+chart fails with a clear error during `helm template` / `helm upgrade`.
 
 ### Disaster Recovery Runbook
 
-#### First restore (from the original cluster `supabase-db`)
+#### First restore
+
+1. Set values:
+
+    ```yaml
+    cnpg:
+      restore:
+        enabled: true
+        objectStoreName: "supabase-db-backup"
+        targetServerName: "supabase-db-r1"
+        # serverName: ""  # leave empty — defaults to cnpg.clusterName ("supabase-db")
+    ```
+
+2. Run `helm upgrade`.
+
+3. Wait until the cluster reaches `Ready`:
+
+    ```bash
+    kubectl get cluster supabase-db
+    ```
+
+4. Set `enabled: false`, keep `targetServerName`:
+
+    ```yaml
+    cnpg:
+      restore:
+        enabled: false
+        targetServerName: "supabase-db-r1"   # do NOT remove — backups go here
+    ```
+
+5. Run `helm upgrade`. CNPG returns to normal operation; WALs continue under `supabase-db-r1/`.
+
+> **Warning:** Do not remove `targetServerName` after restore. Barman archives new WALs
+> under this path. Removing it reverts backups to the default cluster name, breaking WAL
+> continuity required for PITR.
+
+#### Second and subsequent restores
+
+For each subsequent restore, increment the suffix (`-r2`, `-r3`, …). Set `serverName` to
+the previous `targetServerName` — this tells barman where to read the last known-good
+backup from.
 
 ```yaml
+# Second restore (reading from supabase-db-r1)
 cnpg:
   restore:
     enabled: true
     objectStoreName: "supabase-db-backup"
-    serverName: ""              # defaults to cnpg.clusterName ("supabase-db")
-    targetServerName: "supabase-db-r1"  # new, empty S3 path for WALs
-```
-
-After the cluster reaches `Ready`:
-
-```yaml
-cnpg:
-  restore:
-    enabled: false
-    targetServerName: "supabase-db-r1"  # keep backups under the same path
-```
-
-Run `helm upgrade`. CNPG returns to normal operation; WALs continue under
-`supabase-db-r1/`.
-
-#### Second restore (from `supabase-db-r1`)
-
-```yaml
-cnpg:
-  restore:
-    enabled: true
-    objectStoreName: "supabase-db-backup"
-    serverName: "supabase-db-r1"    # read from previous restore's WAL line
-    targetServerName: "supabase-db-r2"  # new, empty S3 path — never reuse
+    serverName: "supabase-db-r1"        # read from previous restore's WAL line
+    targetServerName: "supabase-db-r2"  # new, empty path — never reuse
 ```
 
 After the cluster reaches `Ready`:
@@ -513,12 +553,68 @@ cnpg:
     targetServerName: "supabase-db-r2"
 ```
 
-Increment the suffix (`-r2`, `-r3`, …) with every restore. The S3 bucket
-accumulates `supabase-db/`, `supabase-db-r1/`, `supabase-db-r2/` — each is a
-complete, independently-browsable WAL line, so you retain full PITR across all
-restore generations.
+> **Note:** S3 will accumulate `supabase-db/`, `supabase-db-r1/`, `supabase-db-r2/` etc.
+> Each is a complete, independently-browsable WAL line. Do not delete older prefixes until
+> barman retention has cleaned them — they may be needed for PITR from an earlier point.
 
-### Simplest restore (latest backup)
+#### Tracking restore generation
+
+Keep this table in your production `values.yaml` as a comment to track which path each
+generation reads from and writes to:
+
+| Restore # | serverName (read from) | targetServerName (write to) |
+|-----------|----------------------|---------------------------|
+| Original cluster | — | `supabase-db` |
+| 1 | `supabase-db` | `supabase-db-r1` |
+| 2 | `supabase-db-r1` | `supabase-db-r2` |
+| 3 | `supabase-db-r2` | `supabase-db-r3` |
+
+### Point-in-Time Recovery (PITR)
+
+Restore to a specific point in time by combining `targetTime` with the standard restore
+fields. Always specify `targetServerName` so the new WAL stream goes to a fresh path:
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    serverName: "supabase-db-r1"        # read from this WAL line
+    targetServerName: "supabase-db-r2"  # write new WALs here
+    targetTime: "2026-06-22T10:00:00Z"
+```
+
+Other optional recovery targets:
+
+| Field | Description |
+|-------|-------------|
+| `targetTime` | ISO 8601 timestamp — restore to this point in time |
+| `targetLSN` | WAL Log Sequence Number — restore up to (and including) this LSN |
+| `targetXID` | Transaction ID — restore up to (and including) this transaction |
+| `backupName` | Name of a specific `Backup` CR to use as the base backup |
+
+### Restoring from a differently-named cluster
+
+By default the chart uses `cnpg.clusterName` as the barman `serverName` in
+`externalClusters` — the name under which barman stored the backup files in S3
+(e.g. `s3://bucket/<serverName>/`). This is correct when the source and destination
+clusters share the same name.
+
+If the backup was created by a cluster with a **different** name, set `cnpg.restore.serverName`
+explicitly:
+
+```yaml
+cnpg:
+  clusterName: supabase-db        # new (destination) cluster name
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    serverName: "old-cluster-name"  # name of the cluster that created the backup
+```
+
+When `cnpg.restore.serverName` is left empty (the default), it falls back to `cnpg.clusterName`.
+
+### Minimal restore (latest backup)
 
 If backup is already configured via `cnpg.backup`, a full disaster recovery requires
 setting only one parameter:
@@ -541,59 +637,6 @@ cnpg:
     enabled: true
     objectStoreName: "supabase-db-backup"
 ```
-
-### Point-in-Time Recovery (PITR)
-
-Restore to a specific point in time:
-
-```yaml
-cnpg:
-  restore:
-    enabled: true
-    objectStoreName: "supabase-db-backup"
-    targetTime: "2024-01-15T10:30:00Z"
-```
-
-Other optional recovery targets:
-
-| Field | Description |
-|-------|-------------|
-| `targetTime` | ISO 8601 timestamp — restore to this point in time |
-| `targetLSN` | WAL Log Sequence Number — restore up to (and including) this LSN |
-| `targetXID` | Transaction ID — restore up to (and including) this transaction |
-| `backupName` | Name of a specific `Backup` CR to use as the base backup |
-
-### ObjectStore name resolution
-
-`cnpg.restore.objectStoreName` is resolved in priority order:
-
-1. `cnpg.restore.objectStoreName` — explicit override (recommended)
-2. `cnpg.backup.objectStore.existingName` — shared ObjectStore already used for backups
-3. `<cnpg.clusterName>-backup` — the name the chart generates when `cnpg.backup.enabled=true`
-
-If none of the three can be determined (all empty and `cnpg.backup.enabled=false`), the
-chart fails with a clear error during `helm template` / `helm upgrade`.
-
-### Restoring from a differently-named cluster
-
-By default the chart uses `cnpg.clusterName` as the barman `serverName` in
-`externalClusters` — the name under which barman stored the backup files in S3
-(e.g. `s3://bucket/<serverName>/`). This is correct when the source and destination
-clusters share the same name.
-
-If the backup was created by a cluster with a **different** name, set `cnpg.restore.serverName`
-explicitly:
-
-```yaml
-cnpg:
-  clusterName: supabase-db        # new (destination) cluster name
-  restore:
-    enabled: true
-    objectStoreName: "supabase-db-backup"
-    serverName: "old-cluster-name"  # name of the cluster that created the backup
-```
-
-When `cnpg.restore.serverName` is left empty (the default), it falls back to `cnpg.clusterName`.
 
 ## Gateway API (alpha)
 
