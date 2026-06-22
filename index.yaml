@@ -3,6 +3,20 @@ entries:
   supabase:
   - apiVersion: v2
     appVersion: 17.6.1.108
+    created: "2026-06-22T11:15:59.210105331Z"
+    description: Supabase is the Postgres development platform.
+    digest: f624417ce994cc663c0976d8d5a5b9f433e6458f55e0e2fc0a0b1db55ba86545
+    home: https://github.com/amoniacou/supabase-kubernetes-cnpg
+    icon: https://avatars.githubusercontent.com/u/54469796?s=280&v=4
+    name: supabase
+    sources:
+    - https://github.com/amoniacou/supabase-kubernetes-cnpg
+    type: application
+    urls:
+    - https://github.com/krycha1248/supabase-kubernetes-cnpg/releases/download/supabase-0.7.2/supabase-0.7.2.tgz
+    version: 0.7.2
+  - apiVersion: v2
+    appVersion: 17.6.1.108
     created: "2026-06-22T10:58:23.10125766Z"
     description: Supabase is the Postgres development platform.
     digest: bc9b46bf7ee4a1ee00cb24c1cb259860a98b783e24741b0590e82d27ca0b63bd
@@ -29,4 +43,4 @@ entries:
     urls:
     - https://github.com/krycha1248/supabase-kubernetes-cnpg/releases/download/supabase-0.7.0/supabase-0.7.0.tgz
     version: 0.7.0
-generated: "2026-06-22T10:58:23.101268654Z"
+generated: "2026-06-22T11:15:59.210120282Z"
