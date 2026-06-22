@@ -1227,6 +1227,45 @@ cnpg:
       ## backupOwnerReference: "none" | "self" | "cluster".
       backupOwnerReference: "self"
 
+  ## ---------------------------------------------------------------------------
+  ## Database restore via the CloudNativePG Barman Cloud plugin.
+  ##
+  ## When enabled, the Cluster bootstraps in recovery mode (bootstrap.recovery)
+  ## instead of the default bootstrap.initdb. The cluster restores its data
+  ## from the ObjectStore named below.
+  ##
+  ## IMPORTANT: After a successful restore, set enabled back to false and run
+  ## `helm upgrade` so the Cluster CR drops the bootstrap.recovery block —
+  ## CNPG requires this to return the cluster to normal operation.
+  ## ---------------------------------------------------------------------------
+  restore:
+    ## Set to true to boot the CNPG Cluster in recovery mode.
+    ## WARNING: set back to false and run `helm upgrade` once the restore
+    ## completes, otherwise CNPG will refuse to start new instances.
+    enabled: false
+
+    ## Name of an existing ObjectStore CR from which to restore.
+    ## If empty, falls back to cnpg.backup.objectStore.existingName, then to
+    ## "<cnpg.clusterName>-backup".
+    objectStoreName: ""
+
+    ## Point-in-Time Recovery (PITR) target time (ISO 8601).
+    ## Example: "2024-01-15T10:30:00Z"
+    ## If empty, restore to the latest available point.
+    targetTime: ""
+
+    ## Restore to a specific WAL Log Sequence Number (LSN).
+    ## If empty, ignored.
+    targetLSN: ""
+
+    ## Restore to a specific transaction ID.
+    ## If empty, ignored.
+    targetXID: ""
+
+    ## Name of a specific Backup object to restore from.
+    ## If empty, the most recent backup is used.
+    backupName: ""
+
 tests:
   functions:
     enabled: false
