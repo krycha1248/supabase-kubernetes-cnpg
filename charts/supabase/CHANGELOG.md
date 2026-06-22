@@ -19,13 +19,17 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   set `cnpg.restore.enabled` back to `false` and run `helm upgrade` so CNPG returns
   to normal operation.
 
-- **Automatic WAL archive isolation on restore.** When `cnpg.restore.enabled: true`,
-  the chart now automatically sets `serverName: <clusterName>-restored` in
-  `Cluster.spec.plugins[].parameters`. This routes all new WAL files written during
-  recovery to a fresh, empty S3 path (`<clusterName>-restored/`), preventing
-  `barman-cloud-check-wal-archive` from aborting the restore with
-  `Expected empty archive`. Disaster recovery now works with a single value:
-  `cnpg.restore.enabled: true`. No manual `serverName` configuration is required.
+- **Explicit WAL archive isolation via `targetServerName`.** `cnpg.restore.targetServerName`
+  controls the S3 path prefix under which new WALs are archived during and after a restore
+  (`Cluster.spec.plugins[].parameters.serverName`). Set a unique value per restore (e.g.
+  `supabase-db-r1`, `supabase-db-r2`) so `barman-cloud-check-wal-archive` always finds an
+  empty archive and does not abort with `Expected empty archive`. When `restore.enabled=true`
+  and `targetServerName` is empty, the chart falls back to `<clusterName>-r1`. When
+  `restore.enabled=false`, set `targetServerName` to the same value used during the restore
+  so ongoing backups continue under the same S3 path. After a subsequent restore, increment
+  the suffix and set `serverName` to the previous `targetServerName` so barman reads from
+  the correct WAL line. This replaces the previous automatic `<clusterName>-restored` suffix
+  which blocked second and subsequent restores when WALs had already accumulated.
 
 ### Breaking
 

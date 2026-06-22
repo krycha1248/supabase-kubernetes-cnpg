@@ -1249,11 +1249,30 @@ cnpg:
     ## "<cnpg.clusterName>-backup".
     objectStoreName: ""
 
-    ## Name of the server as stored in the S3 backup (barman's serverName).
-    ## Defaults to cnpg.clusterName when empty — which is correct when the
-    ## backup was taken from a cluster with the same name.
-    ## Set explicitly when restoring from a backup made by a differently-named cluster.
+    ## serverName: the S3 path prefix from which barman reads the backup
+    ## (externalClusters[].plugin.parameters.serverName).
+    ## Defaults to cnpg.clusterName when empty, which is correct for the very
+    ## first restore from the original cluster.
+    ## For a second (or later) restore, set this to the targetServerName used
+    ## during the previous restore so barman reads from that WAL line.
+    ## Example: "supabase-db-r1" when restoring from the first restored cluster.
     serverName: ""
+
+    ## targetServerName: the S3 path prefix under which barman writes new WALs
+    ## during and after this restore (plugins[].parameters.serverName).
+    ## MUST be unique per restore — it must point to an empty S3 path so that
+    ## barman-cloud-check-wal-archive does not abort with "Expected empty archive".
+    ##
+    ## When restore.enabled=true:
+    ##   - Uses this value if set.
+    ##   - Falls back to "<clusterName>-r1" when empty.
+    ## When restore.enabled=false:
+    ##   - Uses this value if set (keeps backups going to the same path after restore).
+    ##   - Omits serverName entirely when empty (barman defaults to clusterName).
+    ##
+    ## Example first restore:  "supabase-db-r1"
+    ## Example second restore: "supabase-db-r2"
+    targetServerName: ""
 
     ## Point-in-Time Recovery (PITR) target time (ISO 8601).
     ## Example: "2024-01-15T10:30:00Z"

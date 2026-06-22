@@ -455,19 +455,68 @@ named `ObjectStore` CR through the `barman-cloud.cloudnative-pg.io` plugin.
 
 ### WAL archive isolation during restore
 
-When `cnpg.restore.enabled` is `true`, the chart automatically sets `serverName` in
-`Cluster.spec.plugins[].parameters` to `<clusterName>-restored`. This routes all new WAL
-files written during (and after) the recovery to a **new, empty S3 path**
-(`s3://<bucket>/<clusterName>-restored/`), while the restore itself reads the original
-backup data from `s3://<bucket>/<clusterName>/`.
+Each restore operation must write its WALs to a **new, empty S3 path** so that
+`barman-cloud-check-wal-archive` does not abort with `Expected empty archive`.
+This is controlled by `cnpg.restore.targetServerName`.
 
-Without this separation the barman-cloud plugin's pre-flight check
-(`barman-cloud-check-wal-archive`) would see the existing WAL files in the archive and
-abort the restore with `Expected empty archive`. The chart handles this automatically — no
-manual configuration is required.
+| Field | Purpose |
+|-------|---------|
+| `cnpg.restore.serverName` | **Read** source — the S3 prefix from which barman fetches the backup. Defaults to `cnpg.clusterName`. |
+| `cnpg.restore.targetServerName` | **Write** destination — the S3 prefix under which new WALs are archived during and after the restore. Must be unique per restore. Defaults to `<clusterName>-r1` when `restore.enabled=true`. |
 
-Once `restore.enabled` is set back to `false`, `serverName` is removed from the plugin
-parameters and barman reverts to using `clusterName` as the archive path (the default).
+After restore completes and you flip `restore.enabled` back to `false`, set
+`targetServerName` to the same value you used during the restore so ongoing
+backups continue under the same path.
+
+### Disaster Recovery Runbook
+
+#### First restore (from the original cluster `supabase-db`)
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    serverName: ""              # defaults to cnpg.clusterName ("supabase-db")
+    targetServerName: "supabase-db-r1"  # new, empty S3 path for WALs
+```
+
+After the cluster reaches `Ready`:
+
+```yaml
+cnpg:
+  restore:
+    enabled: false
+    targetServerName: "supabase-db-r1"  # keep backups under the same path
+```
+
+Run `helm upgrade`. CNPG returns to normal operation; WALs continue under
+`supabase-db-r1/`.
+
+#### Second restore (from `supabase-db-r1`)
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    serverName: "supabase-db-r1"    # read from previous restore's WAL line
+    targetServerName: "supabase-db-r2"  # new, empty S3 path — never reuse
+```
+
+After the cluster reaches `Ready`:
+
+```yaml
+cnpg:
+  restore:
+    enabled: false
+    targetServerName: "supabase-db-r2"
+```
+
+Increment the suffix (`-r2`, `-r3`, …) with every restore. The S3 bucket
+accumulates `supabase-db/`, `supabase-db-r1/`, `supabase-db-r2/` — each is a
+complete, independently-browsable WAL line, so you retain full PITR across all
+restore generations.
 
 ### Simplest restore (latest backup)
 
