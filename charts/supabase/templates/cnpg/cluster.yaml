@@ -7,9 +7,18 @@
     3. "<clusterName>-backup" (chart-generated ObjectStore)
   Fail fast when restore is enabled but no name can be resolved and backup is
   disabled (all three sources empty/false).
+
+  $backupServerName: when restore is active, route new WALs to a dedicated
+  "<clusterName>-restored" path so barman-cloud-check-wal-archive finds an
+  empty archive and does not block the recovery. When restore is not active,
+  leave serverName unset — barman defaults to clusterName.
 */}}
 {{- $restoreObjectStoreName := "" }}
 {{- $restoreServerName := .Values.cnpg.restore.serverName | default .Values.cnpg.clusterName }}
+{{- $backupServerName := "" }}
+{{- if .Values.cnpg.restore.enabled }}
+  {{- $backupServerName = printf "%s-restored" .Values.cnpg.clusterName }}
+{{- end }}
 {{- if .Values.cnpg.restore.enabled }}
   {{- if .Values.cnpg.restore.objectStoreName }}
     {{- $restoreObjectStoreName = .Values.cnpg.restore.objectStoreName }}
@@ -136,6 +145,9 @@ spec:
       isWALArchiver: true
       parameters:
         barmanObjectName: {{ .Values.cnpg.backup.objectStore.existingName | default (.Values.cnpg.backup.objectStore.name | default (printf "%s-backup" .Values.cnpg.clusterName)) | quote }}
+        {{- if $backupServerName }}
+        serverName: {{ $backupServerName | quote }}
+        {{- end }}
   {{- end }}
 
   # Declaratively-managed Supabase roles. Each password comes from its own
