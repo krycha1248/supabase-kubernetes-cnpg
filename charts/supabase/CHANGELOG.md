@@ -19,6 +19,14 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   set `cnpg.restore.enabled` back to `false` and run `helm upgrade` so CNPG returns
   to normal operation.
 
+- **Automatic WAL archive isolation on restore.** When `cnpg.restore.enabled: true`,
+  the chart now automatically sets `serverName: <clusterName>-restored` in
+  `Cluster.spec.plugins[].parameters`. This routes all new WAL files written during
+  recovery to a fresh, empty S3 path (`<clusterName>-restored/`), preventing
+  `barman-cloud-check-wal-archive` from aborting the restore with
+  `Expected empty archive`. Disaster recovery now works with a single value:
+  `cnpg.restore.enabled: true`. No manual `serverName` configuration is required.
+
 ### Breaking
 
 - **Bundled object storage replaced: MinIO → SeaweedFS.** The in-cluster S3

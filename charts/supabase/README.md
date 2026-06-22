@@ -453,9 +453,38 @@ named `ObjectStore` CR through the `barman-cloud.cloudnative-pg.io` plugin.
 > removed from the `Cluster` CR before it will start new replicas or allow a primary
 > promotion. Leaving it set to `true` prevents normal cluster operation.
 
+### WAL archive isolation during restore
+
+When `cnpg.restore.enabled` is `true`, the chart automatically sets `serverName` in
+`Cluster.spec.plugins[].parameters` to `<clusterName>-restored`. This routes all new WAL
+files written during (and after) the recovery to a **new, empty S3 path**
+(`s3://<bucket>/<clusterName>-restored/`), while the restore itself reads the original
+backup data from `s3://<bucket>/<clusterName>/`.
+
+Without this separation the barman-cloud plugin's pre-flight check
+(`barman-cloud-check-wal-archive`) would see the existing WAL files in the archive and
+abort the restore with `Expected empty archive`. The chart handles this automatically — no
+manual configuration is required.
+
+Once `restore.enabled` is set back to `false`, `serverName` is removed from the plugin
+parameters and barman reverts to using `clusterName` as the archive path (the default).
+
 ### Simplest restore (latest backup)
 
-Restore from the most recent backup in an existing `ObjectStore` named `supabase-db-backup`:
+If backup is already configured via `cnpg.backup`, a full disaster recovery requires
+setting only one parameter:
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+```
+
+After `helm upgrade` with these values, CNPG will bootstrap the cluster from the latest
+available backup. Once the cluster reaches `Ready`, set `enabled: false` and upgrade again.
+
+If you manage the `ObjectStore` outside this chart (or want to be explicit), you can also
+specify the name directly:
 
 ```yaml
 cnpg:
@@ -463,9 +492,6 @@ cnpg:
     enabled: true
     objectStoreName: "supabase-db-backup"
 ```
-
-After `helm upgrade` with these values, CNPG will bootstrap the cluster from the latest
-available backup. Once the cluster reaches `Ready`, set `enabled: false` and upgrade again.
 
 ### Point-in-Time Recovery (PITR)
 
@@ -501,9 +527,10 @@ chart fails with a clear error during `helm template` / `helm upgrade`.
 
 ### Restoring from a differently-named cluster
 
-By default the chart uses `cnpg.clusterName` as the barman `serverName` — the name under
-which barman stored the backup files in S3 (e.g. `s3://bucket/<serverName>/`). This is
-correct when the source and destination clusters share the same name.
+By default the chart uses `cnpg.clusterName` as the barman `serverName` in
+`externalClusters` — the name under which barman stored the backup files in S3
+(e.g. `s3://bucket/<serverName>/`). This is correct when the source and destination
+clusters share the same name.
 
 If the backup was created by a cluster with a **different** name, set `cnpg.restore.serverName`
 explicitly:
