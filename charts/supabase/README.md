@@ -499,6 +499,26 @@ Other optional recovery targets:
 If none of the three can be determined (all empty and `cnpg.backup.enabled=false`), the
 chart fails with a clear error during `helm template` / `helm upgrade`.
 
+### Restoring from a differently-named cluster
+
+By default the chart uses `cnpg.clusterName` as the barman `serverName` — the name under
+which barman stored the backup files in S3 (e.g. `s3://bucket/<serverName>/`). This is
+correct when the source and destination clusters share the same name.
+
+If the backup was created by a cluster with a **different** name, set `cnpg.restore.serverName`
+explicitly:
+
+```yaml
+cnpg:
+  clusterName: supabase-db        # new (destination) cluster name
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    serverName: "old-cluster-name"  # name of the cluster that created the backup
+```
+
+When `cnpg.restore.serverName` is left empty (the default), it falls back to `cnpg.clusterName`.
+
 ## Gateway API (alpha)
 
 As an alternative to the Ingress resource, the chart can emit a Gateway API `HTTPRoute` pointing at Kong. This is **alpha** — CRDs must be pre-installed and a `Gateway` must exist in the cluster:
