@@ -441,6 +441,64 @@ Some upstream migrations assume state the chart does not ship and are skipped (s
 - `10000000000000_demote-postgres` — strips SUPERUSER/BYPASSRLS from the `postgres` role; CNPG uses that role as the app superuser and can no longer reconcile `managed.roles` after it runs.
 - `*_pgbouncer*` (three files) — reference a `pgbouncer` schema the base image pre-creates out-of-band. We do not ship that setup.
 
+## Database Restore
+
+The chart can restore a CNPG cluster from a barman-cloud backup stored in S3 (or any
+other ObjectStore-compatible backend). When `cnpg.restore.enabled` is `true` the cluster
+bootstraps via `bootstrap.recovery` instead of `bootstrap.initdb`, pointing CNPG at the
+named `ObjectStore` CR through the `barman-cloud.cloudnative-pg.io` plugin.
+
+> **Warning:** After the restore completes successfully, set `cnpg.restore.enabled` back
+> to `false` and run `helm upgrade`. CNPG requires the `bootstrap.recovery` block to be
+> removed from the `Cluster` CR before it will start new replicas or allow a primary
+> promotion. Leaving it set to `true` prevents normal cluster operation.
+
+### Simplest restore (latest backup)
+
+Restore from the most recent backup in an existing `ObjectStore` named `supabase-db-backup`:
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+```
+
+After `helm upgrade` with these values, CNPG will bootstrap the cluster from the latest
+available backup. Once the cluster reaches `Ready`, set `enabled: false` and upgrade again.
+
+### Point-in-Time Recovery (PITR)
+
+Restore to a specific point in time:
+
+```yaml
+cnpg:
+  restore:
+    enabled: true
+    objectStoreName: "supabase-db-backup"
+    targetTime: "2024-01-15T10:30:00Z"
+```
+
+Other optional recovery targets:
+
+| Field | Description |
+|-------|-------------|
+| `targetTime` | ISO 8601 timestamp — restore to this point in time |
+| `targetLSN` | WAL Log Sequence Number — restore up to (and including) this LSN |
+| `targetXID` | Transaction ID — restore up to (and including) this transaction |
+| `backupName` | Name of a specific `Backup` CR to use as the base backup |
+
+### ObjectStore name resolution
+
+`cnpg.restore.objectStoreName` is resolved in priority order:
+
+1. `cnpg.restore.objectStoreName` — explicit override (recommended)
+2. `cnpg.backup.objectStore.existingName` — shared ObjectStore already used for backups
+3. `<cnpg.clusterName>-backup` — the name the chart generates when `cnpg.backup.enabled=true`
+
+If none of the three can be determined (all empty and `cnpg.backup.enabled=false`), the
+chart fails with a clear error during `helm template` / `helm upgrade`.
+
 ## Gateway API (alpha)
 
 As an alternative to the Ingress resource, the chart can emit a Gateway API `HTTPRoute` pointing at Kong. This is **alpha** — CRDs must be pre-installed and a `Gateway` must exist in the cluster:
