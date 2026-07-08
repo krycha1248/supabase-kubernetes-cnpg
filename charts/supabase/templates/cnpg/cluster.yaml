@@ -190,6 +190,15 @@ spec:
         login: true
         createrole: true
         inherit: false
+        # GoTrue (supabase/auth) calls SET ROLE <target> to scope operations to
+        # specific API roles. With NOINHERIT, PG17's check_role() requires a
+        # direct grant on each target role — transitive membership is not
+        # accepted. Without inRoles here, CNPG's RoleSynchronizer revokes all
+        # memberships on every reconciliation cycle.
+        inRoles:
+          - anon
+          - authenticated
+          - service_role
         passwordSecret:
           name: {{ include "supabase.secret.dbRole" (dict "root" $ "role" "supabase_auth_admin") }}
       - name: supabase_storage_admin
