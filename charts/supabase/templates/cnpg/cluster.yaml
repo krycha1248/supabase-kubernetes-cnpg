@@ -166,6 +166,16 @@ spec:
         comment: "PostgREST login role"
         login: true
         inherit: false
+        # PostgREST issues SET ROLE <claim.role> after JWT validation.
+        # With NOINHERIT, PG17's check_role() requires a direct grant on each
+        # target role — transitive membership through other NOINHERIT roles is
+        # not accepted. Without inRoles here, CNPG's RoleSynchronizer revokes
+        # all memberships on every reconciliation cycle.
+        inRoles:
+          - anon
+          - authenticated
+          - service_role
+          - supabase_admin
         passwordSecret:
           name: {{ include "supabase.secret.dbRole" (dict "root" $ "role" "authenticator") }}
       - name: pgbouncer
