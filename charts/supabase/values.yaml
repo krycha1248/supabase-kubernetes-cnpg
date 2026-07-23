@@ -1272,6 +1272,25 @@ cnpg:
       track_io_timing: "on"
       track_functions: "all"
       cron.database_name: "postgres"
+      ## Logging — controls what PostgreSQL emits to stderr (collected by Vector).
+      ## Minimum message severity to log (debug5…panic). "info" captures INFO,
+      ## NOTICE, WARNING, ERROR, LOG, FATAL, PANIC messages.
+      log_min_messages: "info"
+      ## Minimum severity for the failing-statement text to be logged.
+      log_min_error_statement: "error"
+      ## Log each successful connection. Useful for auditing and debugging.
+      log_connections: "on"
+      ## Log each session termination, including session duration.
+      log_disconnections: "on"
+      ## Log the duration of every completed statement. Set to "on" to capture
+      ## slow queries; keep "off" in production to avoid log noise.
+      log_duration: "off"
+      ## Which SQL statements to log. Options: none, ddl, mod, all.
+      ## "none" is recommended for production; use "ddl" for DDL auditing.
+      log_statement: "none"
+      ## Prefix format for every log line. Includes timestamp, PID, line number,
+      ## user, database, application name, and client address.
+      log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
     ## supabase/postgres docker default set + pg_stat_monitor + supautils.
     shared_preload_libraries:
       - "pg_stat_statements"

@@ -6,12 +6,20 @@ sources:
   kubernetes_host:
     type: kubernetes_logs
     extra_label_selector: app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/name!={{ include "supabase.vector.name" . }}
+{{- if .Values.cnpg.enabled }}
+  kubernetes_db:
+    type: kubernetes_logs
+    extra_label_selector: cnpg.io/cluster={{ .Values.cnpg.clusterName }}
+{{- end }}
 
 transforms:
   project_logs:
     type: remap
     inputs:
       - kubernetes_host
+{{- if .Values.cnpg.enabled }}
+      - kubernetes_db
+{{- end }}
     source: |-
       .project = "default"
       .event_message = del(.message)
@@ -31,7 +39,7 @@ transforms:
       realtime: '.appname == {{ include "supabase.realtime.name" . | quote }}'
       storage: '.appname == {{ include "supabase.storage.name" . | quote }}'
       functions: '.appname == {{ include "supabase.functions.name" . | quote }}'
-      db: '.appname == {{ include "supabase.db.name" . | quote }}'
+      db: '.appname == "postgres"'
   # Ignores non nginx errors since they are related with kong booting up
   kong_logs:
     type: remap
